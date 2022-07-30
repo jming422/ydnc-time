@@ -1,16 +1,20 @@
-# ydnc-time
+# ydnc-time [![GitHub license]][license] [![GitHub top language]]()
 
-## You Don't Need the Cloud to track your time
+[github license]: https://img.shields.io/github/license/jming422/ydnc-time
+[license]: https://github.com/jming422/ydnc-time/blob/main/LICENSE
+[github top language]: https://img.shields.io/github/languages/top/jming422/ydnc-time
+
+**You Don't Need the Cloud to track your time**
 
 This is software to help you track how much time you spend on different types of activities. It is highly opinionated, very minimal, entirely local, and terminal only.
 
-### But why though
+## But why though
 
 Because I have found it's really helpful for me to know the percentage of my time I spend on one type of work over another throughout my day and my most recent week. It's especially useful when I find I'm not doing the type of work I want to be doing at work, because then I can identify the activities that are distracting me and make concrete changes to spend less time on them.
 
 And I became annoyed at how slow the UI was on my previous (cloud-backed) time tracking software choice, so I decided to write my own and make it fast!
 
-### What's YDNC?
+## What's YDNC?
 
 "You Don't Need the Cloud" ;)
 
@@ -24,7 +28,7 @@ So, after a friend suggested the idea that I write my own minimalist version, I 
 
 Maybe someday I'll think of other stuff YDNC for and make some of those apps too :)
 
-### But what if I want the cloud
+## But what if I want the cloud
 
 Then these aren't the ~droids~ software you're looking for -- there are plenty of legitimate use cases for cloud-backed software, and maybe you really do want those features like collaboration, syncing, and the like, and that's great!
 
