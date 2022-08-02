@@ -28,6 +28,8 @@ use tui::{
     Frame, Terminal,
 };
 
+mod legend;
+
 #[derive(Debug, Deserialize, Serialize)]
 struct TimeLog {
     start: DateTime<Local>,
@@ -62,7 +64,7 @@ fn get_save_file_path() -> Option<PathBuf> {
             },
         )
         .or_else(|| env::current_dir().ok())
-        .map(|dir| dir.join(format!("{}.save", Local::today().format("%F"))))
+        .map(|dir| dir.join(format!("{}.ron", Local::today().format("%F"))))
 }
 
 fn save(today: &Vec<TimeLog>) -> io::Result<()> {
@@ -354,33 +356,20 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
         .widths(&cols);
     f.render_widget(table, table_rect);
 
-    let legend = Table::new(vec![Row::new(vec![
-        Cell::from("5am"),
-        Cell::from(""),
-        Cell::from("12pm"),
-        Cell::from(""),
-        Cell::from("8pm"),
-        Cell::from(""),
-        Cell::from("4am"),
-    ])])
-    .column_spacing(0)
-    .widths(&[
-        Constraint::Ratio(3, 24),
-        Constraint::Ratio(4, 24),
-        Constraint::Ratio(3, 24),
-        Constraint::Ratio(5, 24),
-        Constraint::Ratio(2, 24),
-        Constraint::Ratio(6, 24),
-        Constraint::Ratio(1, 24),
-    ]);
-
-    f.render_widget(
-        legend,
-        Layout::default()
-            .horizontal_margin(1)
-            .constraints([Constraint::Percentage(100)].as_ref())
-            .split(legend_rect)[0],
-    );
+    if nice_table_width > 26 {
+        let legend: &Table<'static> = if nice_table_width < 74 {
+            &legend::TRUNC_LEGEND_TABLE
+        } else {
+            &legend::LEGEND_TABLE
+        };
+        f.render_widget(
+            legend.clone(),
+            Layout::default()
+                .horizontal_margin(1)
+                .constraints([Constraint::Percentage(100)].as_ref())
+                .split(legend_rect)[0],
+        );
+    }
 
     let time_entries: Vec<ListItem> = app
         .today

@@ -13,6 +13,7 @@ publish = false
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
 crossterm = "0.24"
+lazy_static = "1.4"
 ron = "0.7"
 serde = { version = "1", features = ["derive"] }
 tui = "0.18"
