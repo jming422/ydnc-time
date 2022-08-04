@@ -30,7 +30,7 @@ use tui::{
 
 mod legend;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone)]
 struct TimeLog {
     start: DateTime<Local>,
     end: Option<DateTime<Local>>,
@@ -155,7 +155,44 @@ impl App {
             if i == 60 {
                 i = 0;
                 self.message = Some("Autosaving...".into());
+
+                // Check if we have advanced into a new day
+                let its_a_new_day = self
+                    .today
+                    .first()
+                    .map_or(false, |tl| tl.start.date() != Local::today());
+
+                // If so and we have an open entry:
+                let open_entry: Option<TimeLog> = if its_a_new_day && self.has_open_entry() {
+                    let entry_ref = self.today.last_mut().unwrap();
+                    // Copy it (pretty nice these TimeLog's impl Copy huh?)
+                    let ret = Some(*entry_ref);
+                    // Close it inside `app.today`, setting its end date to the end of yesterday
+                    entry_ref.end = Some(
+                        // This is the latest representable DateTime on the same calendar day
+                        entry_ref.start.date().succ().and_hms(0, 0, 0)
+                            - chrono::Duration::nanoseconds(1),
+                    );
+                    ret
+                } else {
+                    None
+                };
+
+                // Save today to file
                 save(&self.today)?;
+
+                if its_a_new_day {
+                    // Wipe app.today
+                    self.today.clear();
+
+                    // If we cloned a previously open entry:
+                    if let Some(mut entry) = open_entry {
+                        // Set its start date to the beginning of today
+                        entry.start = Local::today().and_hms(0, 0, 0);
+                        // Leave its `end` open and push it to the clean app.today
+                        self.today.push(entry);
+                    }
+                }
             } else {
                 i += 1;
                 self.message = None;
@@ -171,9 +208,13 @@ impl App {
         Ok(())
     }
 
+    fn has_open_entry(&self) -> bool {
+        self.today.last().map_or(false, |tl| tl.is_open())
+    }
+
     fn close_entry_if_open(&mut self, now: DateTime<Local>) {
         // If we have an open entry, close it
-        if self.today.last().map_or(false, |tl| tl.is_open()) {
+        if self.has_open_entry() {
             self.today.last_mut().unwrap().end = Some(now);
         };
     }
