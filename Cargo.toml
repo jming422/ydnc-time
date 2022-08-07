@@ -11,9 +11,13 @@ categories = ["command-line-utilities", "date-and-time", "visualization"]
 publish = false
 
 [dependencies]
+btleplug = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
 crossterm = "0.24"
 lazy_static = "1.4"
 ron = "0.7"
 serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
 tui = "0.18"
+uuid = "1"
