@@ -91,6 +91,13 @@ pub async fn subscribe(
 ) -> btleplug::Result<()> {
     tracker.subscribe(&cmd_char).await?;
     let mut notifs = tracker.notifications().await?;
+
+    // This scope ensures we release the lock before entering the wait loop
+    {
+        let mut app = app_state.lock().unwrap();
+        app.tracker_connected = true;
+    }
+
     while let Some(notif) = notifs.next().await {
         if let Some(&side_num) = notif.value.first() {
             match side_num {
@@ -98,7 +105,7 @@ pub async fn subscribe(
                     let mut app = app_state.lock().unwrap();
                     app.start_entry(char::from_digit(n.into(), 10).unwrap());
                 }
-                0 => {
+                0 | 9 => {
                     let mut app = app_state.lock().unwrap();
                     app.close_entry_if_open(Local::now());
                 }

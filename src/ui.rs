@@ -1,7 +1,7 @@
 use chrono::{Local, NaiveTime, Timelike};
 use tui::{
     backend::Backend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans, Text},
     widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table, Wrap},
@@ -103,6 +103,17 @@ fn make_today_row(today: &[TimeLog], max_width: u16) -> (Row, Vec<Constraint>) {
     (Row::new(row), cols)
 }
 
+fn format_total_time(today: &[TimeLog]) -> String {
+    let now = Local::now();
+    let total = today.iter().fold(chrono::Duration::zero(), |acc, tl| {
+        acc + (tl.end.as_ref().copied().unwrap_or(now) - tl.start)
+    });
+    // Chrono's Duration doesn't get a format method, but NaiveTime does
+    (NaiveTime::from_hms(0, 0, 0) + total)
+        .format("%T")
+        .to_string()
+}
+
 pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -110,11 +121,12 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
         .horizontal_margin(2)
         .constraints(
             [
-                Constraint::Length(1),
-                Constraint::Length(3),
-                Constraint::Length(2),
-                Constraint::Min(2),
-                Constraint::Length(1),
+                Constraint::Length(1), // Instructions
+                Constraint::Length(3), // "Today" table
+                Constraint::Length(2), // Table legend
+                Constraint::Length(1), // Status row
+                Constraint::Min(2),    // List of time entries
+                Constraint::Length(1), // Messages
             ]
             .as_ref(),
         )
@@ -181,22 +193,36 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
         );
     }
 
+    let total_time = Paragraph::new(format!("Total: {}", format_total_time(&app.today)))
+        .alignment(Alignment::Left);
+
+    let tracker_status = Paragraph::new(format!(
+        "Tracker: {}onnected",
+        if app.tracker_connected { "C" } else { "Not c" }
+    ))
+    .alignment(Alignment::Right);
+
+    let status_row = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(chunks[3]);
+    f.render_widget(total_time, status_row[0]);
+    f.render_widget(tracker_status, status_row[1]);
+
     let time_entries: Vec<ListItem> = app
         .today
         .iter()
-        .enumerate()
-        .map(|(i, time_log)| {
-            let content = vec![Spans::from(Span::raw(format!("{}: {:?}", i, time_log)))];
+        .map(|time_log| {
+            let content = vec![Spans::from(Span::raw(format!("{}", time_log)))];
             ListItem::new(content)
         })
         .collect();
-    let time_entries =
-        List::new(time_entries).block(Block::default().borders(Borders::ALL).title("Time Entries"));
-    f.render_widget(time_entries, chunks[3]);
+    let time_entries = List::new(time_entries).block(Block::default().borders(Borders::ALL));
+    f.render_widget(time_entries, chunks[4]);
 
     let message = app.message.as_ref().map_or("", |m| m.as_str());
     let msg_widget = Paragraph::new(message).wrap(Wrap { trim: false });
-    f.render_widget(msg_widget, chunks[4]);
+    f.render_widget(msg_widget, chunks[5]);
 }
 
 #[cfg(test)]
@@ -352,6 +378,44 @@ mod tests {
                 NaiveTime::from_hms(4, 59, 59),
                 mw
             )
+        );
+    }
+
+    #[test]
+    fn time_totaling() {
+        let now = Local::now();
+        assert_eq!(
+            String::from("00:42:00"),
+            format_total_time(&[TimeLog {
+                start: now - chrono::Duration::minutes(42),
+                end: Some(now),
+                label: '1'
+            }])
+        );
+
+        let mins = now - chrono::Duration::minutes(34);
+        let secs = mins - chrono::Duration::seconds(56);
+        let buff = secs - chrono::Duration::minutes(10);
+        let hours = buff - chrono::Duration::hours(12);
+        assert_eq!(
+            String::from("12:34:56"),
+            format_total_time(&[
+                TimeLog {
+                    start: hours,
+                    end: Some(buff),
+                    label: '1'
+                },
+                TimeLog {
+                    start: secs,
+                    end: Some(mins),
+                    label: '2'
+                },
+                TimeLog {
+                    start: mins,
+                    end: Some(now),
+                    label: '3'
+                }
+            ])
         );
     }
 }

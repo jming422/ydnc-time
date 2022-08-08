@@ -17,7 +17,7 @@ use chrono::{DateTime, Local};
 use crossterm::event::{self, Event, KeyCode};
 use serde::{Deserialize, Serialize};
 use std::{
-    env, fs, io,
+    env, fmt, fs, io,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
@@ -38,6 +38,24 @@ pub struct TimeLog {
 impl TimeLog {
     fn is_open(&self) -> bool {
         self.end.is_none()
+    }
+}
+
+impl fmt::Display for TimeLog {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            // For example:
+            // [coding] from 10:02:37 to 11:23:48
+            "[{}] from {} {}",
+            self.label,
+            self.start.format("%X"),
+            if let Some(end) = self.end.as_ref() {
+                format!("to {}", end.format("%X"))
+            } else {
+                String::from("- ongoing")
+            }
+        )
     }
 }
 
@@ -102,6 +120,7 @@ fn load() -> io::Result<Vec<TimeLog>> {
 pub struct App {
     pub today: Vec<TimeLog>,
     pub message: Option<String>,
+    pub tracker_connected: bool,
 }
 
 impl App {
@@ -110,6 +129,7 @@ impl App {
         match load() {
             Ok(today) => Self {
                 today,
+                tracker_connected: false,
                 message: Some(String::from("Loaded today's time log from save file")),
             },
             Err(err) => Self {
@@ -117,6 +137,7 @@ impl App {
                     "Could not load today's log from save: {}",
                     err.kind()
                 )),
+                tracker_connected: false,
                 ..Default::default()
             },
         }
