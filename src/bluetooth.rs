@@ -100,16 +100,14 @@ pub async fn subscribe(
 
     while let Some(notif) = notifs.next().await {
         if let Some(&side_num) = notif.value.first() {
+            let mut app = app_state.lock().unwrap();
             match side_num {
                 n @ 1..=8 => {
-                    let mut app = app_state.lock().unwrap();
                     app.start_entry(char::from_digit(n.into(), 10).unwrap());
                 }
-                0 | 9 => {
-                    let mut app = app_state.lock().unwrap();
+                _ => {
                     app.close_entry_if_open(Local::now());
                 }
-                _ => {}
             }
         }
     }
