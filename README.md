@@ -14,6 +14,14 @@ This is software to help you track how much time you spend on different types of
 
 ![screenshot](https://raw.githubusercontent.com/jming422/ydnc-time/main/screenshots/screenshot1.png)
 
+## Main Features
+
+- Cross-platform
+- Works well even with very low terminal resolution
+- Autosaves time log to a plain-text format ([RON](https://github.com/ron-rs/ron) to be specific)
+  - Saves to a directory in your `$XDG_CONFIG_HOME` (if applicable) or else in `$HOME/.ydnc/time`
+- Controllable using the keyboard or using a [Timeular Tracker](https://timeular.com/tracker/)
+
 ## But why though
 
 Because I have found it's really helpful for me to know the percentage of my time I spend on one type of work over another throughout my day and my most recent week. It's especially useful when I find I'm not doing the type of work I want to be doing at work, because then I can identify the activities that are distracting me and make concrete changes to spend less time on them.
@@ -52,3 +60,7 @@ I wouldn't have been able to get this app working if it weren't for these other 
   - https://lemariva.com/blog/2020/04/timeular-track-your-time-using-octahedron-linux
   - https://github.com/lemariva/timeular-python
 - [@codingforfun](https://github.com/codingforfun)'s experimentation notes on the Timeular Tracker/Zei°: https://github.com/codingforfun/zeipy
+
+## Disclaimer
+
+This project is not affiliated with Timeular GmbH. References within this project to a Bluetooth "Tracker" or "Timeular Tracker" refer to Timeular's fantastic piece of hardware, which you can find more info about [here](https://timeular.com/tracker/).
