@@ -209,8 +209,12 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     f.render_widget(total_time, status_row[0]);
     f.render_widget(tracker_status, status_row[1]);
 
-    let time_entries: Vec<ListItem> = app
-        .today
+    let today_start_at = if app.today.len() + 2 > (chunks[4].height as usize) {
+        (app.today.len() + 2) - (chunks[4].height as usize)
+    } else {
+        0
+    };
+    let time_entries: Vec<ListItem> = app.today[today_start_at..]
         .iter()
         .map(|time_log| {
             let content = vec![Spans::from(Span::raw(format!("{}", time_log)))];
