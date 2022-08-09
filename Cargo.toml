@@ -6,9 +6,9 @@ edition = "2021"
 description = "You don't need the cloud to log your time"
 repository = "https://github.com/jming422/ydnc-time"
 license = "Apache-2.0 WITH LLVM-exception"
-keywords = ["cli", "dashboard", "terminal", "time", "tui"]
+keywords = ["terminal", "time", "tui", "dashboard"]
 categories = ["command-line-utilities", "date-and-time", "visualization"]
-publish = false
+exclude = ["/screenshots"]
 
 [dependencies]
 btleplug = "0.10"
