@@ -167,9 +167,13 @@ impl App {
 }
 
 pub type AppState = Arc<Mutex<App>>;
-pub fn lock_and_message(app_state: AppState, msg: String) {
+pub fn lock_and_message(app_state: &AppState, msg: String) {
     let mut app = app_state.lock().unwrap();
     app.message = Some(msg);
+}
+pub fn lock_and_set_connected(app_state: &AppState, connected: bool) {
+    let mut app = app_state.lock().unwrap();
+    app.tracker_connected = connected;
 }
 
 pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) -> io::Result<()> {
@@ -183,9 +187,8 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
         if event::poll(Duration::from_secs(1))? {
             match event::read()? {
                 Event::Key(key) => match key.code {
-                    // Number keys 1-8 start tracking a new entry (not 9, 9 does
-                    // nothing. The tracker only has 8 sides and I wanna be
-                    // consistent)
+                    // Number keys 1-8 start tracking a new entry (not 9, 9 does nothing. The
+                    // tracker only has 8 sides and I wanna be consistent)
                     KeyCode::Char(c) if ('1'..='8').contains(&c) => {
                         let mut app = app_state.lock().unwrap();
                         app.start_entry(c);
@@ -206,11 +209,10 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
         }
 
         // HEY YOU BE CAREFUL WITH THIS ONE
-        // This obtains a lock on the mutex for the rest of this loop! That is
-        // good for now, since the rest of the loop is either 1) reset app's
-        // message or 2) autosave the app and then change message, but if you
-        // refactor the loop to do more stuff after autosave/messaging then you
-        // really oughta limit the scope of this lock more!
+        // This obtains a lock on the mutex for the rest of this loop! That is good for now, since
+        // the rest of the loop is either 1) reset app's message or 2) autosave the app and then
+        // change message, but if you refactor the loop to do more stuff after autosave/messaging
+        // then you really oughta limit the scope of this lock more!
         let mut app = app_state.lock().unwrap();
         // 300s = every 5 min do an autosave
         if i == 300 {
