@@ -223,7 +223,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     let time_entries = List::new(time_entries).block(Block::default().borders(Borders::ALL));
     f.render_widget(time_entries, chunks[4]);
 
-    let message = app.message.as_ref().map_or("", |m| m.as_str());
+    let message = app.message.as_ref().map_or("", |m| m.0.as_str());
     let msg_widget = Paragraph::new(message).wrap(Wrap { trim: false });
     f.render_widget(msg_widget, chunks[5]);
 }

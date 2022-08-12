@@ -1,84 +1,184 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use btleplug::api::{Central, Manager as _, Peripheral as _, ScanFilter};
+use btleplug::api::bleuuid::BleUuid;
+use btleplug::api::{Central, CentralEvent, Manager as _, Peripheral as _, ScanFilter};
 use btleplug::api::{Characteristic, PeripheralProperties};
-use btleplug::platform::{Adapter, Manager, Peripheral};
+use btleplug::platform::{Manager, Peripheral, PeripheralId};
 use chrono::Local;
-use tokio::sync::oneshot;
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time;
 use tokio_stream::StreamExt;
+use tracing::{debug, info, trace, warn};
 use uuid::{uuid, Uuid};
 
-use crate::{lock_and_message, lock_and_set_connected, AppState};
+use crate::{lock_and_set_connected, AppState};
 
 // const TRACKER_SERVICE: Uuid = uuid!("c7e70010-c847-11e6-8175-8c89a55d403c");
 const TRACKER_SIDE_CH: Uuid = uuid!("c7e70012-c847-11e6-8175-8c89a55d403c");
 
-async fn connect(app_state: &AppState) -> btleplug::Result<Option<(Peripheral, Characteristic)>> {
+#[derive(Debug)]
+enum State {
+    Starting,
+    Stopping,
+    Connecting,
+    Connected(Peripheral, Characteristic),
+}
+
+/// Probably best to, no matter what this function returns, always try and re-call it after a few
+/// seconds if/whenever it does return. This function returning /should/ always indicate some
+/// OS-level error such as, "you don't have permission to access a bluetooth adapter" or "the
+/// adapter is turned off" or something like that, so I think we should keep poking at it every once
+/// in a while to see if e.g. the user turned their bluetooth adapter back on. What's the harm in
+/// generating some non-user-visible errors every once in a while anyway?
+async fn create_conn_mgr(
+    app_state: &AppState,
+    state_tx: &mpsc::UnboundedSender<State>,
+) -> btleplug::Result<()> {
     let manager = Manager::new().await?;
     let adapters = manager.adapters().await?;
     let central = adapters.into_iter().next();
     if central.is_none() {
-        lock_and_message(
-            app_state,
-            String::from("You don't have access a Bluetooth adapter, not searching for tracker"),
-        );
-        return Ok(None);
+        debug!("No accessible Bluetooth adapter, not searching for tracker");
+        let _ = state_tx.send(State::Stopping);
+        return Ok(());
     }
     let central = central.unwrap();
 
-    lock_and_message(
-        app_state,
-        String::from("Searching for Bluetooth tracker..."),
-    );
+    let _ = state_tx.send(State::Connecting);
+
+    // Each adapter has an event stream, we fetch via events(), simplifying the type, this will
+    // return what is essentially a Future<Result<Stream<Item=CentralEvent>>>.
+    let mut events = central.events().await?;
+
+    // start scanning for devices
     central.start_scan(ScanFilter::default()).await?;
-    // instead of waiting, you can use central.events() to get a stream which will notify you of new
-    // devices, for an example of that see examples/event_driven_discovery.rs
-    time::sleep(Duration::from_secs(3)).await;
 
-    // find the device we're interested in
-    let tracker = match find_tracker(&central).await? {
-        Some(t) => t,
-        None => return Ok(None),
-    };
+    // Print based on whatever the event receiver outputs. Note that the event receiver blocks, so
+    // in a real program, this should be run in its own thread (not task, as this library does not
+    // yet use async channels).
+    let mut tracker_id: Option<PeripheralId> = None;
+    while let Some(event) = events.next().await {
+        match event {
+            CentralEvent::DeviceDiscovered(id) => {
+                trace!(
+                    "(status: {}connected) DeviceDiscovered: {:?}",
+                    if tracker_id.is_some() { "" } else { "dis" },
+                    id
+                );
+                if tracker_id.is_some() {
+                    continue;
+                }
 
-    // connect to the device
-    tracker.connect().await?;
+                // Errors here should cause a loop skip, not marking the task as failed
+                let p = central.peripheral(&id).await;
+                if let Err(e) = p {
+                    warn!("Error identifying peripheral {:?}: {}", id, e);
+                    continue;
+                }
+                let p = p.unwrap();
 
-    // discover services and characteristics
-    tracker.discover_services().await?;
+                let props = p.properties().await;
+                if let Err(e) = props {
+                    warn!("Error identifying peripheral properties: {}", e);
+                    continue;
+                }
+                let props = props.unwrap();
 
-    // find the characteristic we want
-    let chars = tracker.characteristics();
-    let cmd_char = chars.into_iter().find(|c| c.uuid == TRACKER_SIDE_CH);
-    if cmd_char.is_none() {
-        lock_and_message(
-            app_state,
-            String::from("Found a device named like a tracker but lacking the correct service"),
-        );
-        return Ok(None);
-    }
-    let cmd_char = cmd_char.unwrap();
+                if let Some(PeripheralProperties { local_name, .. }) = props {
+                    if local_name.map_or(false, |name| name.contains("Timeular")) {
+                        info!("Found tracker");
 
-    lock_and_message(app_state, String::from("Successfully connected to tracker"));
+                        if let Err(e) = p.connect().await {
+                            warn!("Error connecting: {}", e);
+                            continue;
+                        }
 
-    let current_value = tracker.read(&cmd_char).await?;
-    if let Some(&side_num) = current_value.first() {
-        // If the tracker is not on a side (value 0), don't do anything
-        if side_num > 0 {
-            let mut app = app_state.lock().unwrap();
-            app.start_entry(char::from_digit(side_num.into(), 10).unwrap());
+                        if let Err(e) = p.discover_services().await {
+                            warn!("Error discovering services: {}", e);
+                            continue;
+                        }
+
+                        // find the characteristic we want
+                        let chars = p.characteristics();
+                        let cmd_char = chars.into_iter().find(|c| c.uuid == TRACKER_SIDE_CH);
+                        if cmd_char.is_none() {
+                            info!("Found a device named like a tracker but lacking the correct service");
+                            continue;
+                        }
+                        let cmd_char = cmd_char.unwrap();
+
+                        tracker_id = Some(id);
+                        let _ = state_tx.send(State::Connected(p, cmd_char));
+                        lock_and_set_connected(app_state, true);
+                        // this one is okay to kill the task if it fails b/c it'd mean our BTLE
+                        // Central has died which I'm assuming is unrecoverable
+                        central.stop_scan().await?;
+                    }
+                }
+            }
+            CentralEvent::DeviceUpdated(id) => {
+                trace!("DeviceUpdated: {:?}", id);
+            }
+            CentralEvent::DeviceConnected(id) => {
+                trace!("DeviceConnected: {:?}", id);
+            }
+            CentralEvent::DeviceDisconnected(id) => {
+                debug!("DeviceDisconnected: {:?}", id);
+                if let Some(tid) = tracker_id.as_ref() {
+                    if tid == &id {
+                        tracker_id = None;
+                        let _ = state_tx.send(State::Connecting);
+                        lock_and_set_connected(app_state, false);
+                        central.start_scan(ScanFilter::default()).await?;
+                    }
+                }
+            }
+            CentralEvent::ManufacturerDataAdvertisement {
+                id,
+                manufacturer_data,
+            } => {
+                trace!(
+                    "ManufacturerDataAdvertisement: {:?}, {:?}",
+                    id,
+                    manufacturer_data
+                );
+            }
+            CentralEvent::ServiceDataAdvertisement { id, service_data } => {
+                trace!("ServiceDataAdvertisement: {:?}, {:?}", id, service_data);
+            }
+            CentralEvent::ServicesAdvertisement { id, services } => {
+                let services: Vec<String> =
+                    services.into_iter().map(|s| s.to_short_string()).collect();
+                trace!("ServicesAdvertisement: {:?}, {:?}", id, services);
+            }
         }
     }
 
-    Ok(Some((tracker, cmd_char)))
+    // The only way to get here is if the bluetooth central's event stream is terminated. In theory
+    // this shouldn't happen, unless perhaps the bluetooth adapter is shut down by the OS or
+    // something.
+    Ok(())
 }
 
-async fn disconnect(tracker: &Peripheral) -> btleplug::Result<()> {
-    tracker.disconnect().await?;
-    Ok(())
+async fn start_conn_mgr(app_state: AppState, state_tx: mpsc::UnboundedSender<State>) {
+    let mut i = 5;
+    while i > 0 {
+        i -= 1;
+        let msg = if i > 0 {
+            "relaunching connection manager after 5s"
+        } else {
+            "giving up on bluetooth"
+        };
+        if let Err(e) = create_conn_mgr(&app_state, &state_tx).await {
+            warn!("Received BTLE error, {}: {}", msg, e);
+        } else {
+            warn!("BTLE Central is/became unavailable, {}", msg,);
+        }
+
+        time::sleep(Duration::from_secs(5)).await;
+    }
 }
 
 async fn subscribe(
@@ -86,21 +186,29 @@ async fn subscribe(
     cmd_char: &Characteristic,
     app_state: &AppState,
 ) -> btleplug::Result<()> {
+    // Get the initial value since the subscribe stream doesn't include it
+    let current_value = tracker.read(cmd_char).await?;
     tracker.subscribe(cmd_char).await?;
-    // From the btleplug docs:
-    //   The stream will remain valid across connections and can be queried before any connection is
-    //   made.
-    // Heck yeah
     let mut notifs = tracker.notifications().await?;
 
-    lock_and_set_connected(app_state, true);
+    if let Some(side_num) = current_value.first() {
+        // If the tracker is not on a side (sides are 1-8, other numbers are edges), don't do anything
+        if (1..=8).contains(side_num) {
+            let mut app = app_state.lock().unwrap();
+            app.start_entry(char::from_digit((*side_num).into(), 10).unwrap());
+        }
+    }
 
     while let Some(notif) = notifs.next().await {
         if let Some(&side_num) = notif.value.first() {
             let mut app = app_state.lock().unwrap();
             match side_num {
                 n @ 1..=8 => {
-                    app.start_entry(char::from_digit(n.into(), 10).unwrap());
+                    let label = char::from_digit(n.into(), 10).unwrap();
+                    // Only do something if there is NOT an already open label equal to this one
+                    if app.open_entry_label().map_or(false, |l| l != label) {
+                        app.start_entry(label);
+                    }
                 }
                 _ => {
                     app.close_entry_if_open(Local::now());
@@ -108,120 +216,124 @@ async fn subscribe(
             }
         }
     }
+
     Ok(())
 }
 
-async fn find_tracker(central: &Adapter) -> btleplug::Result<Option<Peripheral>> {
-    for p in central.peripherals().await? {
-        if let Some(PeripheralProperties { local_name, .. }) = p.properties().await? {
-            if local_name.map_or(false, |name| name.contains("Timeular")) {
-                return Ok(Some(p));
-            }
+fn spawn_sub_task(tracker: Peripheral, chr: Characteristic, app_state: AppState) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut i = 5;
+        while i > 0 {
+            i -= 1;
+            let msg = if i > 0 {
+                "retrying after 3s"
+            } else {
+                "giving up"
+            };
+            if let Err(e) = subscribe(&tracker, &chr, &app_state).await {
+                warn!(
+                    "Error subscribing to notifications from tracker, {}: {}",
+                    msg, e
+                );
+            } else {
+                warn!("Tracker notifications stream ceased unexpectedly, {}", msg);
+            };
+            time::sleep(Duration::from_secs(3)).await;
         }
-    }
-    Ok(None)
+    })
 }
 
-pub struct BluetoothTask(JoinHandle<()>, oneshot::Sender<()>);
+async fn start_subscriber(app_state: &AppState, mut state_rx: mpsc::UnboundedReceiver<State>) {
+    let mut handler: Option<(JoinHandle<()>, Peripheral)> = None;
 
-impl BluetoothTask {
-    /// Spawns the Bluetooth tracker handling task, returning the task's JoinHandle and a oneshot
-    /// channel you can use to instruct the task to shutdown gracefully.
-    pub fn start(app_state: AppState) -> Self {
-        // make a oneshot channel so we can tell the bluetooth task to disconnect at shutdown time
-        let (stop_tx, stop_rx) = oneshot::channel();
-        let btle_handler = tokio::spawn(async move {
-            let tracker = connect(&app_state).await;
-            match tracker {
-                Err(e) => {
-                    lock_and_message(&app_state, format!("Error connecting to tracker: {}", e))
-                }
-                Ok(None) => {
-                    lock_and_message(&app_state, String::from("No Bluetooth tracker found"))
-                }
-                Ok(Some((tracker, cmd_char))) => {
-                    let tracker = Arc::new(tracker);
+    // Initialization is different -- we can take some shortcuts during this phase
+    while let Some(res) = state_rx.recv().await {
+        match res {
+            State::Stopping => {
+                return;
+            }
+            State::Connected(t, c) => {
+                handler = Some((spawn_sub_task(t.clone(), c, Arc::clone(app_state)), t));
+                break;
+            }
+            _ => {}
+        }
+    }
 
-                    // In the absence of initial Bluetooth communication errors, subscribe() will
-                    // run forever, so we have to spawn it and hold onto its task handle, so we can
-                    // abort() it when we want it to stop
-                    let tracker_ref = Arc::clone(&tracker);
-                    let app_arc = Arc::clone(&app_state);
-                    let characteristic = cmd_char.clone();
-                    let sub_handler = tokio::spawn(async move {
-                        if let Err(e) = subscribe(&tracker_ref, &characteristic, &app_arc).await {
-                            lock_and_message(
-                                &app_arc,
-                                format!("Error subscribing to notifications from tracker: {}", e),
-                            );
-                        };
-                    });
-
-                    // So turns out that btleplug's notification stream, once opened, will safely
-                    // remain open forever, even if the Bluetooth connection is dropped. What's cool
-                    // about that is that if you re-establish the connection, the notificaiton
-                    // stream will seamlessly continue working on the new connection! What's not
-                    // cool about that is it means that the sub_handler task can't detect connection
-                    // failures, so we have to do do that also.
-                    let tracker_ref = Arc::clone(&tracker);
-                    let app_arc = Arc::clone(&app_state);
-                    let heartbeat = tokio::spawn(async move {
-                        loop {
-                            tokio::time::sleep(Duration::from_secs(5)).await;
-                            // If we've dropped the connection: (this happens pretty often actually,
-                            // when either us or the tracker goes to sleep/is turned off)
-                            if !tracker_ref.is_connected().await.unwrap_or(false) {
-                                lock_and_set_connected(&app_arc, false);
-
-                                if let Err(e) = tracker_ref.connect().await {
-                                    lock_and_message(
-                                        &app_arc,
-                                        format!("Error reconnecting to tracker: {}", e),
-                                    );
-                                    continue;
-                                }
-
-                                if let Err(e) = tracker_ref.subscribe(&cmd_char).await {
-                                    lock_and_message(
-                                        &app_arc,
-                                        format!("Error resubscribing to tracker: {}", e),
-                                    );
-                                    continue;
-                                }
-
-                                lock_and_set_connected(&app_arc, true);
-                            }
-                        }
-                    });
-
-                    // If we receive a stop signal, or if somehow the stop sender drops, stop our
-                    // subscription task, disconnect from Bluetooth, and return from this task.
-                    let _ = stop_rx.await;
-                    heartbeat.abort();
-                    sub_handler.abort();
-
-                    // Ignore errors along this path; we're on our way to exiting our program
-                    // anyway, so if we can't be graceful about it then oh well.
-                    let _ = disconnect(&tracker).await;
-                    lock_and_set_connected(&app_state, false);
+    // After initialization, no more shortcuts, we have to actually handle all the state changes
+    while let Some(res) = state_rx.recv().await {
+        match res {
+            State::Connecting | State::Starting => {
+                if let Some((task, _)) = handler.take() {
+                    task.abort();
                 }
             }
+            State::Connected(t, c) => {
+                let prev_handler =
+                    handler.replace((spawn_sub_task(t.clone(), c, Arc::clone(app_state)), t));
+
+                if let Some((task, _)) = prev_handler {
+                    task.abort();
+                }
+            }
+            State::Stopping => {
+                if let Some((task, tracker)) = handler.take() {
+                    task.abort();
+                    let _ = tracker.disconnect().await;
+                    break;
+                }
+            }
+        };
+    }
+}
+
+pub struct BluetoothTask {
+    conn_mgr: JoinHandle<()>,
+    subscriber: JoinHandle<()>,
+    state_tx: mpsc::UnboundedSender<State>,
+}
+
+impl BluetoothTask {
+    pub fn start(app: AppState) -> Self {
+        let (state_tx, state_rx) = mpsc::unbounded_channel();
+        state_tx.send(State::Starting).unwrap();
+
+        let cmgr_app = Arc::clone(&app);
+        let cmgr_tx = state_tx.clone();
+        let conn_mgr = tokio::spawn(async move {
+            start_conn_mgr(cmgr_app, cmgr_tx).await;
         });
 
-        BluetoothTask(btle_handler, stop_tx)
+        let subscriber = tokio::spawn(async move {
+            start_subscriber(&app, state_rx).await;
+        });
+
+        Self {
+            conn_mgr,
+            subscriber,
+            state_tx,
+        }
     }
 
     /// Gracefully shuts down a BluetoothTask. If the task had panicked, raise the panic on the
     /// thread calling this function.
     pub async fn stop(self) {
-        let BluetoothTask(btle_handler, stop_tx) = self;
+        let BluetoothTask {
+            state_tx,
+            conn_mgr,
+            subscriber,
+            ..
+        } = self;
 
-        // Exit time: tell the bluetooth task to disconnect and stop. Silently ignore a send() Err
-        // because this would just mean that the bluetooth task has stopped already.
-        let _ = stop_tx.send(());
+        // Connection manager can just be aborted roughly, no cleanup necessary
+        conn_mgr.abort();
 
-        // If the btle_handler task panicked, resume the panic here
-        if let Err(join_error) = btle_handler.await {
+        // Subscriber has some cleanup to do -- mainly, disconnecting from the tracker -- so notify
+        // it and await its graceful stop. Silently ignore a send() Err because this would just mean
+        // that the bluetooth task has stopped already.
+        let _ = state_tx.send(State::Stopping);
+        // If the subscriber task panicked, resume the panic here
+        if let Err(join_error) = subscriber.await {
             if let Ok(reason) = join_error.try_into_panic() {
                 // Resume the panic on this thread
                 std::panic::resume_unwind(reason);

@@ -19,5 +19,6 @@ ron = "0.7"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
+tracing = "0.1"
 tui = "0.18"
 uuid = "1"

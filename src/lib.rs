@@ -116,10 +116,28 @@ fn load() -> io::Result<Vec<TimeLog>> {
     Ok(tl_vec)
 }
 
+#[derive(Debug)]
+pub struct Message(String, DateTime<Local>);
+
+impl Default for Message {
+    fn default() -> Self {
+        Self(Default::default(), Local::now())
+    }
+}
+
+impl<T> From<T> for Message
+where
+    T: Into<String>,
+{
+    fn from(s: T) -> Self {
+        Self(s.into(), Local::now())
+    }
+}
+
 #[derive(Default, Debug)]
 pub struct App {
     pub today: Vec<TimeLog>,
-    pub message: Option<String>,
+    pub message: Option<Message>,
     pub tracker_connected: bool,
 }
 
@@ -130,13 +148,12 @@ impl App {
             Ok(today) => Self {
                 today,
                 tracker_connected: false,
-                message: Some(String::from("Loaded today's time log from save file")),
+                message: Some("Loaded today's time log from save file".into()),
             },
             Err(err) => Self {
-                message: Some(format!(
-                    "Could not load today's log from save: {}",
-                    err.kind()
-                )),
+                message: Some(
+                    format!("Could not load today's log from save: {}", err.kind()).into(),
+                ),
                 tracker_connected: false,
                 ..Default::default()
             },
@@ -154,6 +171,10 @@ impl App {
         };
     }
 
+    pub fn open_entry_label(&self) -> Option<char> {
+        self.today.last().map(|tl| tl.label)
+    }
+
     pub fn start_entry(&mut self, label: char) {
         let now = Local::now();
         // Heckyea DateTime is Copy
@@ -167,13 +188,26 @@ impl App {
 }
 
 pub type AppState = Arc<Mutex<App>>;
-pub fn lock_and_message(app_state: &AppState, msg: String) {
+
+pub fn lock_and_message<T>(app_state: &AppState, msg: T)
+where
+    T: Into<Message>,
+{
     let mut app = app_state.lock().unwrap();
-    app.message = Some(msg);
+    app.message = Some(msg.into());
 }
+
 pub fn lock_and_set_connected(app_state: &AppState, connected: bool) {
     let mut app = app_state.lock().unwrap();
     app.tracker_connected = connected;
+    app.message = Some(
+        if connected {
+            "Successfully connected to tracker"
+        } else {
+            "Connection to tracker lost"
+        }
+        .into(),
+    );
 }
 
 pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) -> io::Result<()> {
@@ -217,7 +251,7 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
         // 300s = every 5 min do an autosave
         if i == 300 {
             i = 0;
-            app.message = Some(String::from("Autosaving..."));
+            app.message = Some("Autosaving...".into());
 
             // Check if we have advanced into a new day
             let its_a_new_day = app
@@ -258,7 +292,9 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
             }
         } else {
             i += 1;
-            if i % 5 == 0 {
+            if app.message.as_ref().map_or(false, |m| {
+                Local::now().signed_duration_since(m.1) > chrono::Duration::seconds(10)
+            }) {
                 app.message = None;
             }
         }
@@ -267,11 +303,11 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
     // Exiting the loop means somebody pushed `q`, so let's save and quit
     let mut app = app_state.lock().unwrap();
     app.close_entry_if_open(Local::now());
-    app.message = Some(String::from("Saving time log..."));
+    app.message = Some("Saving time log...".into());
     terminal.draw(|f| ui::draw(f, &app))?; // Draw the UI to show message
     save(&app.today)?;
 
-    app.message = Some(String::from("Disconnecting Bluetooth and exiting..."));
+    app.message = Some("Disconnecting Bluetooth and exiting...".into());
     terminal.draw(|f| ui::draw(f, &app))?; // Draw the UI to show message
     Ok(())
 }
