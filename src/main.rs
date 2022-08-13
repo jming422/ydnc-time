@@ -22,13 +22,28 @@ use std::{
     io,
     sync::{Arc, Mutex},
 };
+use tracing_subscriber::{prelude::*, EnvFilter};
 use tui::{backend::CrosstermBackend, Terminal};
 
 use ydnc_time::{bluetooth::BluetoothTask, App};
 
-// modeled after https://github.com/fdehau/tui-rs/blob/master/examples/user_input.rs
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    // Need to hold on to this guard until the program exits
+    let _appender_guard = {
+        let file_appender =
+            tracing_appender::rolling::hourly(std::env::temp_dir().join("ydnc"), "time.log");
+        let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+        let sub = tracing_subscriber::fmt::layer().with_writer(non_blocking);
+        tracing_subscriber::registry()
+            .with(sub)
+            .with(EnvFilter::from_env("YDNC_TIME_LOG"))
+            .init();
+
+        Some(guard)
+    };
+
+    // modeled after https://github.com/fdehau/tui-rs/blob/master/examples/user_input.rs
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();

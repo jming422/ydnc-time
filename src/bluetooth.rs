@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow;
 use btleplug::api::bleuuid::BleUuid;
 use btleplug::api::{Central, CentralEvent, Manager as _, Peripheral as _, ScanFilter};
 use btleplug::api::{Characteristic, PeripheralProperties};
@@ -17,6 +18,19 @@ use crate::{lock_and_set_connected, AppState};
 
 // const TRACKER_SERVICE: Uuid = uuid!("c7e70010-c847-11e6-8175-8c89a55d403c");
 const TRACKER_SIDE_CH: Uuid = uuid!("c7e70012-c847-11e6-8175-8c89a55d403c");
+
+/// This macro adds a timeout, awaits it, unnests the Result, and returns an anyhow Result. The
+/// Error type will be either `tokio::time::error::Elapsed` or `btleplug::Error`.
+macro_rules! await_timeout {
+    ($secs:literal, $fut:expr) => {
+        time::timeout(Duration::from_secs($secs), $fut)
+            .await
+            .map_or_else(
+                |err| anyhow::Result::Err(anyhow::Error::new(err)),
+                |res| res.map_err(|e| anyhow::Error::new(e)),
+            )
+    };
+}
 
 #[derive(Debug)]
 enum State {
@@ -72,14 +86,14 @@ async fn create_conn_mgr(
                 }
 
                 // Errors here should cause a loop skip, not marking the task as failed
-                let p = central.peripheral(&id).await;
+                let p = await_timeout!(5, central.peripheral(&id));
                 if let Err(e) = p {
                     warn!("Error identifying peripheral {:?}: {}", id, e);
                     continue;
                 }
                 let p = p.unwrap();
 
-                let props = p.properties().await;
+                let props = await_timeout!(5, p.properties());
                 if let Err(e) = props {
                     warn!("Error identifying peripheral properties: {}", e);
                     continue;
@@ -90,12 +104,12 @@ async fn create_conn_mgr(
                     if local_name.map_or(false, |name| name.contains("Timeular")) {
                         info!("Found tracker");
 
-                        if let Err(e) = p.connect().await {
+                        if let Err(e) = await_timeout!(10, p.connect()) {
                             warn!("Error connecting: {}", e);
                             continue;
                         }
 
-                        if let Err(e) = p.discover_services().await {
+                        if let Err(e) = await_timeout!(5, p.discover_services()) {
                             warn!("Error discovering services: {}", e);
                             continue;
                         }
@@ -185,17 +199,22 @@ async fn subscribe(
     tracker: &Peripheral,
     cmd_char: &Characteristic,
     app_state: &AppState,
-) -> btleplug::Result<()> {
+) -> anyhow::Result<()> {
     // Get the initial value since the subscribe stream doesn't include it
-    let current_value = tracker.read(cmd_char).await?;
-    tracker.subscribe(cmd_char).await?;
-    let mut notifs = tracker.notifications().await?;
+    let current_value = await_timeout!(5, tracker.read(cmd_char))?;
+
+    await_timeout!(3, tracker.subscribe(cmd_char))?;
+    let mut notifs = await_timeout!(3, tracker.notifications())?;
 
     if let Some(side_num) = current_value.first() {
         // If the tracker is not on a side (sides are 1-8, other numbers are edges), don't do anything
         if (1..=8).contains(side_num) {
             let mut app = app_state.lock().unwrap();
-            app.start_entry(char::from_digit((*side_num).into(), 10).unwrap());
+            let label = char::from_digit((*side_num).into(), 10).unwrap();
+            // Only do something if there is NOT an already open label equal to this one
+            if app.open_entry_label().map_or(false, |l| l != label) {
+                app.start_entry(label);
+            }
         }
     }
 
@@ -226,7 +245,7 @@ fn spawn_sub_task(tracker: Peripheral, chr: Characteristic, app_state: AppState)
         while i > 0 {
             i -= 1;
             let msg = if i > 0 {
-                "retrying after 3s"
+                "retrying after 5s"
             } else {
                 "giving up"
             };
@@ -238,7 +257,7 @@ fn spawn_sub_task(tracker: Peripheral, chr: Characteristic, app_state: AppState)
             } else {
                 warn!("Tracker notifications stream ceased unexpectedly, {}", msg);
             };
-            time::sleep(Duration::from_secs(3)).await;
+            time::sleep(Duration::from_secs(5)).await;
         }
     })
 }
@@ -279,7 +298,7 @@ async fn start_subscriber(app_state: &AppState, mut state_rx: mpsc::UnboundedRec
             State::Stopping => {
                 if let Some((task, tracker)) = handler.take() {
                     task.abort();
-                    let _ = tracker.disconnect().await;
+                    let _ = await_timeout!(5, tracker.disconnect());
                     break;
                 }
             }
