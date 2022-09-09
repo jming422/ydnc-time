@@ -22,6 +22,7 @@ use std::{
     io,
     sync::{Arc, Mutex},
 };
+use tracing::info;
 use tracing_subscriber::{prelude::*, EnvFilter};
 use tui::{backend::CrosstermBackend, Terminal};
 
@@ -43,6 +44,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(guard)
     };
 
+    info!("ydnc-time starting");
+
     // modeled after https://github.com/fdehau/tui-rs/blob/master/examples/user_input.rs
     // setup terminal
     enable_raw_mode()?;
@@ -62,6 +65,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let res = ydnc_time::run(app_state, &mut terminal).await;
 
     btle_task.stop().await;
+
+    info!("ydnc-time stopped");
 
     // restore terminal
     disable_raw_mode()?;
