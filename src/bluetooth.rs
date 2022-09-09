@@ -54,7 +54,7 @@ async fn create_conn_mgr(
     let adapters = manager.adapters().await?;
     let central = adapters.into_iter().next();
     if central.is_none() {
-        debug!("No accessible Bluetooth adapter, not searching for tracker");
+        info!("No accessible Bluetooth adapter, not searching for tracker");
         let _ = state_tx.send(State::Stopping);
         return Ok(());
     }
@@ -76,7 +76,7 @@ async fn create_conn_mgr(
     while let Some(event) = events.next().await {
         match event {
             CentralEvent::DeviceDiscovered(id) => {
-                trace!(
+                debug!(
                     "(status: {}connected) DeviceDiscovered: {:?}",
                     if tracker_id.is_some() { "" } else { "dis" },
                     id
@@ -136,10 +136,10 @@ async fn create_conn_mgr(
                 trace!("DeviceUpdated: {:?}", id);
             }
             CentralEvent::DeviceConnected(id) => {
-                trace!("DeviceConnected: {:?}", id);
+                info!("DeviceConnected: {:?}", id);
             }
             CentralEvent::DeviceDisconnected(id) => {
-                debug!("DeviceDisconnected: {:?}", id);
+                info!("DeviceDisconnected: {:?}", id);
                 if let Some(tid) = tracker_id.as_ref() {
                     if tid == &id {
                         tracker_id = None;
@@ -200,8 +200,10 @@ async fn subscribe(
     cmd_char: &Characteristic,
     app_state: &AppState,
 ) -> anyhow::Result<()> {
+    info!("Starting subscription handler by reading current value...");
     // Get the initial value since the subscribe stream doesn't include it
     let current_value = await_timeout!(5, tracker.read(cmd_char))?;
+    info!("...got {:?}", current_value);
 
     await_timeout!(3, tracker.subscribe(cmd_char))?;
     let mut notifs = await_timeout!(3, tracker.notifications())?;
@@ -209,10 +211,11 @@ async fn subscribe(
     if let Some(side_num) = current_value.first() {
         // If the tracker is not on a side (sides are 1-8, other numbers are edges), don't do anything
         if (1..=8).contains(side_num) {
+            info!("Setting initial state to side {}", side_num);
             let mut app = app_state.lock().unwrap();
             let label = char::from_digit((*side_num).into(), 10).unwrap();
             // Only do something if there is NOT an already open label equal to this one
-            if app.open_entry_label().map_or(false, |l| l != label) {
+            if app.open_entry_label().map_or(true, |l| l != label) {
                 app.start_entry(label);
             }
         }
@@ -223,19 +226,22 @@ async fn subscribe(
             let mut app = app_state.lock().unwrap();
             match side_num {
                 n @ 1..=8 => {
+                    info!("Tracker switched to side {:?}", side_num);
                     let label = char::from_digit(n.into(), 10).unwrap();
                     // Only do something if there is NOT an already open label equal to this one
-                    if app.open_entry_label().map_or(false, |l| l != label) {
+                    if app.open_entry_label().map_or(true, |l| l != label) {
                         app.start_entry(label);
                     }
                 }
                 _ => {
+                    info!("Tracker switched to edge {:?}", side_num);
                     app.close_entry_if_open(Local::now());
                 }
             }
         }
     }
 
+    warn!("Subscription handler's notification stream ended!");
     Ok(())
 }
 
@@ -269,13 +275,18 @@ async fn start_subscriber(app_state: &AppState, mut state_rx: mpsc::UnboundedRec
     while let Some(res) = state_rx.recv().await {
         match res {
             State::Stopping => {
+                info!("State::Stopping > Subscriber told to stop during initialization");
                 return;
             }
             State::Connected(t, c) => {
+                info!("State::Connected > Subscriber initialization complete");
                 handler = Some((spawn_sub_task(t.clone(), c, Arc::clone(app_state)), t));
                 break;
             }
-            _ => {}
+            s => debug!(
+                "{:?} > Subscriber ignoring this state change during initialization",
+                s
+            ),
         }
     }
 
@@ -283,11 +294,13 @@ async fn start_subscriber(app_state: &AppState, mut state_rx: mpsc::UnboundedRec
     while let Some(res) = state_rx.recv().await {
         match res {
             State::Connecting | State::Starting => {
+                info!("{:?} > Subscriber aborting existing handler until we establish a new connection", res);
                 if let Some((task, _)) = handler.take() {
                     task.abort();
                 }
             }
             State::Connected(t, c) => {
+                info!("State::Connected > Subscriber starting new handler");
                 let prev_handler =
                     handler.replace((spawn_sub_task(t.clone(), c, Arc::clone(app_state)), t));
 
@@ -296,6 +309,7 @@ async fn start_subscriber(app_state: &AppState, mut state_rx: mpsc::UnboundedRec
                 }
             }
             State::Stopping => {
+                info!("State::Stopping > Subscriber stopping existing handler if any");
                 if let Some((task, tracker)) = handler.take() {
                     task.abort();
                     let _ = await_timeout!(5, tracker.disconnect());
@@ -319,10 +333,12 @@ impl BluetoothTask {
 
         let cmgr_app = Arc::clone(&app);
         let cmgr_tx = state_tx.clone();
+        info!("Starting BTLE connection manager");
         let conn_mgr = tokio::spawn(async move {
             start_conn_mgr(cmgr_app, cmgr_tx).await;
         });
 
+        info!("Starting BTLE subscriber");
         let subscriber = tokio::spawn(async move {
             start_subscriber(&app, state_rx).await;
         });
@@ -343,6 +359,7 @@ impl BluetoothTask {
             subscriber,
             ..
         } = self;
+        info!("Stopping BTLE connection manager & subscriber");
 
         // Connection manager can just be aborted roughly, no cleanup necessary
         conn_mgr.abort();

@@ -172,7 +172,12 @@ impl App {
     }
 
     pub fn open_entry_label(&self) -> Option<char> {
-        self.today.last().map(|tl| tl.label)
+        if let Some(&tl) = self.today.last() {
+            if tl.is_open() {
+                return Some(tl.label);
+            }
+        }
+        None
     }
 
     pub fn start_entry(&mut self, label: char) {
