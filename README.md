@@ -10,7 +10,7 @@
 
 ---
 
-This is software to help you track how much time you spend on different types of activities. It is highly opinionated, very minimal, entirely local, and terminal only.
+This is software to help you track how much time you spend on different types of activities. It is highly opinionated, entirely local, and terminal only.
 
 ![screenshot](https://raw.githubusercontent.com/jming422/ydnc-time/main/screenshots/screenshot1.png)
 
@@ -38,7 +38,7 @@ This came out of the fact that until writing this app, I'd been using cloud-base
 - Expensive. Using the software _at all_ required a subscription.
 - Unnecessary. I only used this software on one computer; why was it even on the cloud?
 
-So, after a friend suggested the idea that I write my own minimalist version, I decided to do just that! And `ydnc-time` was born as an opinionated, cloudless, and _fast_ alternative for my own time tracking.
+So, after a friend suggested the idea that I write my own minimalist version, I decided to do just that! And `ydnc-time` was born as an opinionated, cloudless, and _fast_ alternative for my own time tracking. I may or may not stick to the original "minimal" part though; only time will tell about that one.
 
 Maybe someday I'll think of other stuff YDNC for and make some of those apps too :)
 

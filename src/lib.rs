@@ -240,6 +240,8 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                     KeyCode::Char('q') => {
                         break;
                     }
+                    // this is my special super secret dev/debug key binding for testing stuff
+                    KeyCode::Char('`') => {}
                     _ => {}
                 },
                 Event::Resize(_, _) => terminal.autoresize()?,

@@ -21,6 +21,9 @@ const TRACKER_SIDE_CH: Uuid = uuid!("c7e70012-c847-11e6-8175-8c89a55d403c");
 
 /// This macro adds a timeout, awaits it, unnests the Result, and returns an anyhow Result. The
 /// Error type will be either `tokio::time::error::Elapsed` or `btleplug::Error`.
+///
+/// Because it does Result unnesting, the given future must return a Result. If it doesn't, you
+/// should just use time::timeout() without this macro.
 macro_rules! await_timeout {
     ($secs:literal, $fut:expr) => {
         time::timeout(Duration::from_secs($secs), $fut)
@@ -195,20 +198,41 @@ async fn start_conn_mgr(app_state: AppState, state_tx: mpsc::UnboundedSender<Sta
     }
 }
 
+async fn ensure_connection(tracker: &Peripheral) -> anyhow::Result<bool> {
+    let still_connected = await_timeout!(5, tracker.is_connected())?;
+    // If we aren't still connected, try to reconnect
+    if !still_connected {
+        info!("Connection to tracker lost, trying to reconnect");
+        await_timeout!(10, tracker.connect())?;
+
+        if await_timeout!(5, tracker.is_connected())? {
+            info!("Connection reestablished!");
+        } else {
+            warn!("Failed to reconnect to tracker!");
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 async fn subscribe(
     tracker: &Peripheral,
     cmd_char: &Characteristic,
     app_state: &AppState,
 ) -> anyhow::Result<()> {
-    info!("Starting subscription handler by reading current value...");
+    info!("Starting subscription handler");
+    if !ensure_connection(tracker).await? {
+        return Ok(());
+    }
+    info!("Reading initial value of tracker...");
     // Get the initial value since the subscribe stream doesn't include it
     let current_value = await_timeout!(5, tracker.read(cmd_char))?;
-    info!("...got {:?}", current_value);
 
     await_timeout!(3, tracker.subscribe(cmd_char))?;
     let mut notifs = await_timeout!(3, tracker.notifications())?;
 
     if let Some(side_num) = current_value.first() {
+        info!("...got {:?}", side_num);
         // If the tracker is not on a side (sides are 1-8, other numbers are edges), don't do anything
         if (1..=8).contains(side_num) {
             info!("Setting initial state to side {}", side_num);
@@ -221,27 +245,40 @@ async fn subscribe(
         }
     }
 
-    while let Some(notif) = notifs.next().await {
-        if let Some(&side_num) = notif.value.first() {
-            let mut app = app_state.lock().unwrap();
-            match side_num {
-                n @ 1..=8 => {
-                    info!("Tracker switched to side {:?}", side_num);
-                    let label = char::from_digit(n.into(), 10).unwrap();
-                    // Only do something if there is NOT an already open label equal to this one
-                    if app.open_entry_label().map_or(true, |l| l != label) {
-                        app.start_entry(label);
-                    }
+    loop {
+        // If we don't get a new notification in 5 seconds, check on the tracker's connection status
+        match time::timeout(Duration::from_secs(5), notifs.next()).await {
+            Err(_) => {
+                if !ensure_connection(tracker).await? {
+                    break;
                 }
-                _ => {
-                    info!("Tracker switched to edge {:?}", side_num);
-                    app.close_entry_if_open(Local::now());
+            }
+            Ok(None) => {
+                warn!("Subscription handler's notification stream ended!");
+                break;
+            }
+            Ok(Some(notif)) => {
+                if let Some(&side_num) = notif.value.first() {
+                    let mut app = app_state.lock().unwrap();
+                    match side_num {
+                        n @ 1..=8 => {
+                            info!("Tracker switched to side {:?}", side_num);
+                            let label = char::from_digit(n.into(), 10).unwrap();
+                            // Only do something if there is NOT an already open label equal to this one
+                            if app.open_entry_label().map_or(true, |l| l != label) {
+                                app.start_entry(label);
+                            }
+                        }
+                        _ => {
+                            info!("Tracker switched to edge {:?}", side_num);
+                            app.close_entry_if_open(Local::now());
+                        }
+                    }
                 }
             }
         }
     }
 
-    warn!("Subscription handler's notification stream ended!");
     Ok(())
 }
 
@@ -294,13 +331,16 @@ async fn start_subscriber(app_state: &AppState, mut state_rx: mpsc::UnboundedRec
     while let Some(res) = state_rx.recv().await {
         match res {
             State::Connecting | State::Starting => {
-                info!("{:?} > Subscriber aborting existing handler until we establish a new connection", res);
+                info!(
+                    "{:?} > Aborting existing handler until we establish a new connection",
+                    res
+                );
                 if let Some((task, _)) = handler.take() {
                     task.abort();
                 }
             }
             State::Connected(t, c) => {
-                info!("State::Connected > Subscriber starting new handler");
+                info!("State::Connected > Starting new handler");
                 let prev_handler =
                     handler.replace((spawn_sub_task(t.clone(), c, Arc::clone(app_state)), t));
 
@@ -309,7 +349,7 @@ async fn start_subscriber(app_state: &AppState, mut state_rx: mpsc::UnboundedRec
                 }
             }
             State::Stopping => {
-                info!("State::Stopping > Subscriber stopping existing handler if any");
+                info!("State::Stopping > Stopping existing handler if any");
                 if let Some((task, tracker)) = handler.take() {
                     task.abort();
                     let _ = await_timeout!(5, tracker.disconnect());
