@@ -353,8 +353,8 @@ async fn start_subscriber(app_state: &AppState, mut state_rx: mpsc::UnboundedRec
                 if let Some((task, tracker)) = handler.take() {
                     task.abort();
                     let _ = await_timeout!(5, tracker.disconnect());
-                    break;
                 }
+                return;
             }
         };
     }
