@@ -48,7 +48,8 @@ impl TimeLog {
             .preferences
             .labels
             .as_ref()
-            .and_then(|lbls| lbls.get((self.number - 1) as usize));
+            .and_then(|lbls| lbls.get((self.number - 1) as usize))
+            .and_then(|lbl| if lbl.is_empty() { None } else { Some(lbl) });
 
         pref_label.map_or_else(|| self.number.to_string(), |l| l.clone())
     }
@@ -86,7 +87,7 @@ where
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Preferences {
     labels: Option<[String; 7]>,
 }
@@ -102,14 +103,17 @@ pub struct App {
 
 impl App {
     pub fn load_or_default() -> Self {
-        // Load from save file if possible
-        match load() {
+        // Load from save files if possible
+        let preferences = load_prefs().unwrap_or_default();
+        match load_log() {
             Ok(today) => Self {
                 today,
+                preferences,
                 message: Some("Loaded today's time log from save file".into()),
                 ..Default::default()
             },
             Err(err) => Self {
+                preferences,
                 message: Some(
                     format!("Could not load today's log from save: {}", err.kind()).into(),
                 ),
@@ -203,11 +207,11 @@ fn get_settings_file_path() -> Option<PathBuf> {
     })
 }
 
-fn save(today: &Vec<TimeLog>) -> io::Result<()> {
+fn save_log(today: &Vec<TimeLog>) -> io::Result<()> {
     let filename = get_save_file_path().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "Can't find or create config directory",
+            "Can't find or create app data directory",
         )
     })?;
 
@@ -219,11 +223,11 @@ fn save(today: &Vec<TimeLog>) -> io::Result<()> {
     Ok(())
 }
 
-fn load() -> io::Result<Vec<TimeLog>> {
+fn load_log() -> io::Result<Vec<TimeLog>> {
     let filename = get_save_file_path().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "Can't find or create config directory",
+            "Can't find or create app data directory",
         )
     })?;
 
@@ -236,36 +240,125 @@ fn load() -> io::Result<Vec<TimeLog>> {
     Ok(tl_vec)
 }
 
+fn save_prefs(prefs: &Preferences) -> io::Result<()> {
+    let filename = get_settings_file_path().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Can't find or create config directory",
+        )
+    })?;
+
+    let file = fs::File::create(filename)?;
+
+    ron::ser::to_writer_pretty(file, prefs, ron::ser::PrettyConfig::default())
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+    Ok(())
+}
+
+fn load_prefs() -> io::Result<Preferences> {
+    let filename = get_save_file_path().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Can't find or create app data directory",
+        )
+    })?;
+
+    let file = fs::File::open(filename)?;
+    let prefs = ron::de::from_reader(file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+    Ok(prefs)
+}
+
 pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) -> io::Result<()> {
     let mut i: usize = 0;
     loop {
         {
-            let app = app_state.lock().unwrap();
-            terminal.draw(|f| ui::draw(f, &app))?;
+            let mut app = app_state.lock().unwrap();
+            terminal.draw(|f| ui::draw(f, &mut app))?;
         }
 
         if event::poll(Duration::from_secs(1))? {
             match event::read()? {
-                Event::Key(key) => match key.code {
-                    // Number keys 1-8 start tracking a new entry (not 9, 9 does nothing. The
-                    // tracker only has 8 sides and I wanna be consistent)
-                    KeyCode::Char(c) if ('1'..='8').contains(&c) => {
-                        let mut app = app_state.lock().unwrap();
-                        app.start_entry(c.to_digit(10).unwrap() as u8);
-                    }
-                    // 0 and Esc stop tracking
-                    KeyCode::Char('0') | KeyCode::Esc => {
-                        let mut app = app_state.lock().unwrap();
-                        app.close_entry_if_open(Local::now());
-                    }
-                    KeyCode::Char('q') => {
-                        break;
-                    }
-                    // this is my special super secret dev/debug key binding for testing stuff
-                    KeyCode::Char('`') => {}
-                    _ => {}
-                },
                 Event::Resize(_, _) => terminal.autoresize()?,
+
+                // The function of keys depends on which Page the user is on
+                Event::Key(key) => {
+                    let mut app = app_state.lock().unwrap();
+
+                    match app.selected_page {
+                        ui::Page::Home => match key.code {
+                            // Number keys 1-8 start tracking a new entry (not 9, 9 does nothing. The
+                            // tracker only has 8 sides and I wanna be consistent)
+                            KeyCode::Char(c) if ('1'..='8').contains(&c) => {
+                                app.start_entry(c.to_digit(10).unwrap() as u8)
+                            }
+                            // 0 and Esc stop tracking
+                            KeyCode::Char('0') | KeyCode::Esc => {
+                                app.close_entry_if_open(Local::now())
+                            }
+                            KeyCode::Char('q') => {
+                                break;
+                            }
+                            _ => {}
+                        },
+
+                        ui::Page::Settings(ref mut state) => {
+                            if state.editing {
+                                match key.code {
+                                    KeyCode::Esc => {
+                                        state.editing = false;
+                                        state.input = String::new();
+                                    }
+                                    KeyCode::Enter => {
+                                        state.editing = false;
+                                        // mem::take will replace state.input with its default value (empty string)
+                                        let new_val = std::mem::take(&mut state.input);
+
+                                        let edited_idx = state.list_state.selected().unwrap();
+                                        let labels = app
+                                            .preferences
+                                            .labels
+                                            .get_or_insert(Default::default());
+                                        labels[edited_idx] = new_val;
+
+                                        save_prefs(&app.preferences)?;
+                                    }
+                                    KeyCode::Char(c) => state.input.push(if state.caps_lock {
+                                        c.to_ascii_uppercase()
+                                    } else {
+                                        c
+                                    }),
+                                    KeyCode::Backspace => {
+                                        state.input.pop();
+                                    }
+                                    KeyCode::CapsLock => state.caps_lock = !state.caps_lock,
+                                    _ => {}
+                                }
+                            } else {
+                                match key.code {
+                                    KeyCode::Esc => {
+                                        app.selected_page = ui::Page::Home;
+                                    }
+                                    KeyCode::Up | KeyCode::Char('k') => state.list_state.select(
+                                        Some(state.list_state.selected().map_or(7, |n| n - 1)),
+                                    ),
+                                    KeyCode::Down | KeyCode::Char('j') => state.list_state.select(
+                                        Some(state.list_state.selected().map_or(0, |n| n + 1)),
+                                    ),
+                                    KeyCode::Enter => {
+                                        state.editing = true;
+                                    }
+                                    KeyCode::Char('q') => {
+                                        break;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+
                 _ => {} // I've disabled mouse support in main.rs anyway
             }
         }
@@ -304,7 +397,7 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
             };
 
             // Save today to file
-            save(&app.today)?;
+            save_log(&app.today)?;
 
             if its_a_new_day {
                 // Wipe app.today
@@ -332,10 +425,10 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
     let mut app = app_state.lock().unwrap();
     app.close_entry_if_open(Local::now());
     app.message = Some("Saving time log...".into());
-    terminal.draw(|f| ui::draw(f, &app))?; // Draw the UI to show message
-    save(&app.today)?;
+    terminal.draw(|f| ui::draw(f, &mut app))?; // Draw the UI to show message
+    save_log(&app.today)?;
 
     app.message = Some("Disconnecting Bluetooth and exiting...".into());
-    terminal.draw(|f| ui::draw(f, &app))?; // Draw the UI to show message
+    terminal.draw(|f| ui::draw(f, &mut app))?; // Draw the UI to show message
     Ok(())
 }

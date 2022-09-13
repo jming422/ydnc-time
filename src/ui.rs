@@ -1,4 +1,9 @@
-use tui::{backend::Backend, style::Color, Frame};
+use tui::{
+    backend::Backend,
+    style::Color,
+    widgets::{Paragraph, Wrap},
+    Frame,
+};
 
 use crate::App;
 
@@ -9,8 +14,7 @@ mod settings;
 pub enum Page {
     #[default]
     Home,
-    Settings,
-    Edit,
+    Settings(settings::State),
 }
 
 fn number_to_color(i: u8) -> Color {
@@ -27,10 +31,14 @@ fn number_to_color(i: u8) -> Color {
     }
 }
 
-pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
+fn message_widget(app: &App) -> Paragraph {
+    let message = app.message.as_ref().map_or("", |m| m.0.as_str());
+    Paragraph::new(message).wrap(Wrap { trim: false })
+}
+
+pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     match app.selected_page {
         Page::Home => home::draw(f, app),
-        Page::Settings => settings::draw(f, app),
-        Page::Edit => todo!(),
+        Page::Settings(_) => settings::draw(f, app),
     }
 }

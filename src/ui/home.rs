@@ -4,13 +4,13 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans, Text},
-    widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table, Wrap},
+    widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table},
     Frame,
 };
 
 use crate::{legend, App, TimeLog};
 
-use super::number_to_color;
+use super::{message_widget, number_to_color};
 
 /// Returns a tuple of start (inclusive) and end (exclusive) x-coordinates for drawing the specified
 /// absolute duration
@@ -128,12 +128,12 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
         Span::raw("/"),
         Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
         Span::raw(": stop tracking | "),
-        Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": quit | "),
+        // Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
+        // Span::raw(": edit entries | "),
         Span::styled("s", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": quit | "),
-        Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": edit entries | "),
+        Span::raw(": settings | "),
+        Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(": quit"),
     ])));
     f.render_widget(help_message, chunks[0]);
 
@@ -215,9 +215,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     let time_entries = List::new(time_entries).block(Block::default().borders(Borders::ALL));
     f.render_widget(time_entries, chunks[4]);
 
-    let message = app.message.as_ref().map_or("", |m| m.0.as_str());
-    let msg_widget = Paragraph::new(message).wrap(Wrap { trim: false });
-    f.render_widget(msg_widget, chunks[5]);
+    f.render_widget(message_widget(app), chunks[5]);
 }
 
 #[cfg(test)]
