@@ -139,6 +139,7 @@ pub struct App {
     pub today: Vec<TimeLog>,
     pub message: Option<Message>,
     pub tracker_connected: bool,
+    pub selected_page: ui::Page,
 }
 
 impl App {
@@ -147,14 +148,13 @@ impl App {
         match load() {
             Ok(today) => Self {
                 today,
-                tracker_connected: false,
                 message: Some("Loaded today's time log from save file".into()),
+                ..Default::default()
             },
             Err(err) => Self {
                 message: Some(
                     format!("Could not load today's log from save: {}", err.kind()).into(),
                 ),
-                tracker_connected: false,
                 ..Default::default()
             },
         }
