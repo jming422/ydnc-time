@@ -13,16 +13,16 @@ pub enum Page {
     Edit,
 }
 
-fn char_to_color(c: char) -> Color {
-    match c {
-        '1' => Color::Blue,
-        '2' => Color::Cyan,
-        '3' => Color::Green,
-        '4' => Color::Magenta,
-        '5' => Color::Red,
-        '6' => Color::Yellow,
-        '7' => Color::LightBlue,
-        '8' => Color::LightCyan,
+fn number_to_color(i: u8) -> Color {
+    match i {
+        1 => Color::Blue,
+        2 => Color::Cyan,
+        3 => Color::Green,
+        4 => Color::Magenta,
+        5 => Color::Red,
+        6 => Color::Yellow,
+        7 => Color::LightBlue,
+        8 => Color::LightCyan,
         _ => Color::Reset,
     }
 }

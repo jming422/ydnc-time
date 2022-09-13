@@ -33,23 +33,31 @@ mod ui;
 pub struct TimeLog {
     start: DateTime<Local>,
     end: Option<DateTime<Local>>,
-    label: char,
+    number: u8,
 }
 
 impl TimeLog {
     fn is_open(&self) -> bool {
         self.end.is_none()
     }
-}
 
-impl fmt::Display for TimeLog {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            // For example:
-            // [coding] from 10:02:37 to 11:23:48
+    /// Returns the user-set label for this log if they've set one, else returns
+    /// its number as a String
+    fn label(&self, app: &App) -> String {
+        let pref_label = app
+            .preferences
+            .labels
+            .as_ref()
+            .and_then(|lbls| lbls.get((self.number - 1) as usize));
+
+        pref_label.map_or_else(|| self.number.to_string(), |l| l.clone())
+    }
+
+    /// For example: "[coding] from 10:02:37 to 11:23:48"
+    fn format(&self, app: &App) -> String {
+        format!(
             "[{}] from {} {}",
-            self.label,
+            self.label(app),
             self.start.format("%X"),
             if let Some(end) = self.end.as_ref() {
                 format!("to {}", end.format("%X"))
@@ -79,11 +87,17 @@ where
 }
 
 #[derive(Default, Debug)]
+pub struct Preferences {
+    labels: Option<[String; 7]>,
+}
+
+#[derive(Default, Debug)]
 pub struct App {
     pub today: Vec<TimeLog>,
     pub message: Option<Message>,
     pub tracker_connected: bool,
     pub selected_page: ui::Page,
+    pub preferences: Preferences,
 }
 
 impl App {
@@ -115,23 +129,23 @@ impl App {
         };
     }
 
-    pub fn open_entry_label(&self) -> Option<char> {
+    pub fn open_entry_number(&self) -> Option<u8> {
         if let Some(&tl) = self.today.last() {
             if tl.is_open() {
-                return Some(tl.label);
+                return Some(tl.number);
             }
         }
         None
     }
 
-    pub fn start_entry(&mut self, label: char) {
+    pub fn start_entry(&mut self, number: u8) {
         let now = Local::now();
         // Heckyea DateTime is Copy
         self.close_entry_if_open(now);
         self.today.push(TimeLog {
             start: now,
             end: None,
-            label,
+            number,
         });
     }
 }
@@ -237,7 +251,7 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                     // tracker only has 8 sides and I wanna be consistent)
                     KeyCode::Char(c) if ('1'..='8').contains(&c) => {
                         let mut app = app_state.lock().unwrap();
-                        app.start_entry(c);
+                        app.start_entry(c.to_digit(10).unwrap() as u8);
                     }
                     // 0 and Esc stop tracking
                     KeyCode::Char('0') | KeyCode::Esc => {

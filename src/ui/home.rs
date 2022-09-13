@@ -10,7 +10,7 @@ use tui::{
 
 use crate::{legend, App, TimeLog};
 
-use super::char_to_color;
+use super::number_to_color;
 
 /// Returns a tuple of start (inclusive) and end (exclusive) x-coordinates for drawing the specified
 /// absolute duration
@@ -39,13 +39,14 @@ fn duration_to_x_coords(start: NaiveTime, end: NaiveTime, max_width: u16) -> (u1
     (start_px, end_px)
 }
 
-fn make_today_row(today: &[TimeLog], max_width: u16) -> (Row, Vec<Constraint>) {
+fn make_today_row(app: &App, max_width: u16) -> (Row, Vec<Constraint>) {
     let table_starts_at = Local::today().and_hms(5, 0, 0);
     let table_ends_at =
         table_starts_at + chrono::Duration::hours(24) - chrono::Duration::nanoseconds(1);
 
     // Only count things that happened at least a little bit during today
-    let today_iter = today
+    let today_iter = app
+        .today
         .iter()
         .filter(|tl| tl.end.map_or(true, |e| e > table_starts_at) && tl.start < table_ends_at)
         .enumerate();
@@ -78,10 +79,10 @@ fn make_today_row(today: &[TimeLog], max_width: u16) -> (Row, Vec<Constraint>) {
             let len = (coords.1 - current_px).max(1);
             cols.push(Constraint::Length(len));
             row.push(
-                Cell::from(curr_tl.label.to_string()).style(
+                Cell::from(curr_tl.label(app)).style(
                     Style::default()
                         .fg(Color::Black)
-                        .bg(char_to_color(curr_tl.label)),
+                        .bg(number_to_color(curr_tl.number)),
                 ),
             );
             current_px += len;
@@ -160,7 +161,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     let table_rect = table_layout.split(chunks[1])[1];
     let legend_rect = table_layout.split(chunks[2])[1];
 
-    let (row, cols) = make_today_row(&app.today, nice_table_width - 2);
+    let (row, cols) = make_today_row(app, nice_table_width - 2);
     let table = Table::new(vec![row])
         .block(table_block)
         // .style()
@@ -207,7 +208,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     let time_entries: Vec<ListItem> = app.today[today_start_at..]
         .iter()
         .map(|time_log| {
-            let content = vec![Spans::from(Span::raw(format!("{}", time_log)))];
+            let content = vec![Spans::from(Span::raw(time_log.format(app)))];
             ListItem::new(content)
         })
         .collect();
@@ -382,7 +383,7 @@ mod tests {
             format_total_time(&[TimeLog {
                 start: now - chrono::Duration::minutes(42),
                 end: Some(now),
-                label: '1'
+                number: 1
             }])
         );
 
@@ -396,17 +397,17 @@ mod tests {
                 TimeLog {
                     start: hours,
                     end: Some(buff),
-                    label: '1'
+                    number: 1
                 },
                 TimeLog {
                     start: secs,
                     end: Some(mins),
-                    label: '2'
+                    number: 2
                 },
                 TimeLog {
                     start: mins,
                     end: Some(now),
-                    label: '3'
+                    number: 3
                 }
             ])
         );

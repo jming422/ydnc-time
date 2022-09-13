@@ -236,16 +236,15 @@ async fn subscribe(
     await_timeout!(3, tracker.subscribe(cmd_char))?;
     let mut notifs = await_timeout!(3, tracker.notifications())?;
 
-    if let Some(side_num) = current_value.first() {
+    if let Some(&side_num) = current_value.first() {
         info!("...got {:?}", side_num);
         // If the tracker is not on a side (sides are 1-8, other numbers are edges), don't do anything
-        if (1..=8).contains(side_num) {
+        if (1..=8).contains(&side_num) {
             info!("Setting initial state to side {}", side_num);
             let mut app = app_state.lock().unwrap();
-            let label = char::from_digit((*side_num).into(), 10).unwrap();
-            // Only do something if there is NOT an already open label equal to this one
-            if app.open_entry_label().map_or(true, |l| l != label) {
-                app.start_entry(label);
+            // Only do something if there is NOT an already open entry with the same number
+            if app.open_entry_number().map_or(true, |n| n != side_num) {
+                app.start_entry(side_num);
             }
         }
     }
@@ -266,12 +265,11 @@ async fn subscribe(
                 if let Some(&side_num) = notif.value.first() {
                     let mut app = app_state.lock().unwrap();
                     match side_num {
-                        n @ 1..=8 => {
+                        1..=8 => {
                             info!("Tracker switched to side {:?}", side_num);
-                            let label = char::from_digit(n.into(), 10).unwrap();
-                            // Only do something if there is NOT an already open label equal to this one
-                            if app.open_entry_label().map_or(true, |l| l != label) {
-                                app.start_entry(label);
+                            // Only do something if there is NOT an already open entry with the same number
+                            if app.open_entry_number().map_or(true, |n| n != side_num) {
+                                app.start_entry(side_num);
                             }
                         }
                         _ => {
