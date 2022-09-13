@@ -71,6 +71,7 @@ async fn create_conn_mgr(
 
     // start scanning for devices
     central.start_scan(ScanFilter::default()).await?;
+    let mut scanning = true;
 
     // Print based on whatever the event receiver outputs. Note that the event receiver blocks, so
     // in a real program, this should be run in its own thread (not task, as this library does not
@@ -132,6 +133,7 @@ async fn create_conn_mgr(
                         // this one is okay to kill the task if it fails b/c it'd mean our BTLE
                         // Central has died which I'm assuming is unrecoverable
                         central.stop_scan().await?;
+                        scanning = false;
                     }
                 }
             }
@@ -148,7 +150,10 @@ async fn create_conn_mgr(
                         tracker_id = None;
                         let _ = state_tx.send(State::Connecting);
                         lock_and_set_connected(app_state, false);
-                        central.start_scan(ScanFilter::default()).await?;
+                        if !scanning {
+                            central.start_scan(ScanFilter::default()).await?;
+                            scanning = true;
+                        }
                     }
                 }
             }
