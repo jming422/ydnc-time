@@ -15,9 +15,10 @@
 
 use chrono::{DateTime, Local};
 use crossterm::event::{self, Event, KeyCode};
+use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::{
-    env, fmt, fs, io,
+    fs, io,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
@@ -57,63 +58,6 @@ impl fmt::Display for TimeLog {
             }
         )
     }
-}
-
-/// Gets our config directory, creating it if it doesn't exist
-fn get_save_file_path() -> Option<PathBuf> {
-    env::var("XDG_CONFIG_HOME")
-        .map_or_else(
-            |_| {
-                // If no XDG_CONFIG_HOME, try HOME
-                env::var("HOME").ok().and_then(|dir| {
-                    let path: PathBuf = [&dir, ".ydnc", "time"].iter().collect();
-                    fs::canonicalize(&path)
-                        .or_else(|_| fs::create_dir_all(&path).and_then(|_| fs::canonicalize(path)))
-                        .ok()
-                })
-            },
-            |dir| {
-                let path: PathBuf = [&dir, "ydnc", "time"].iter().collect();
-                fs::canonicalize(&path)
-                    .or_else(|_| fs::create_dir_all(&path).and_then(|_| fs::canonicalize(path)))
-                    .ok()
-            },
-        )
-        .or_else(|| env::current_dir().ok())
-        .map(|dir| dir.join(format!("{}.ron", Local::today().format("%F"))))
-}
-
-fn save(today: &Vec<TimeLog>) -> io::Result<()> {
-    let filename = get_save_file_path().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "Can't find or create config directory",
-        )
-    })?;
-
-    let file = fs::File::create(filename)?;
-
-    ron::ser::to_writer_pretty(file, today, ron::ser::PrettyConfig::default())
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-
-    Ok(())
-}
-
-fn load() -> io::Result<Vec<TimeLog>> {
-    let filename = get_save_file_path().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "Can't find or create config directory",
-        )
-    })?;
-
-    let file = fs::File::open(filename)?;
-    let mut tl_vec: Vec<TimeLog> =
-        ron::de::from_reader(file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-
-    tl_vec.sort_unstable_by_key(|tl| tl.start);
-
-    Ok(tl_vec)
 }
 
 #[derive(Debug)]
@@ -213,6 +157,69 @@ pub fn lock_and_set_connected(app_state: &AppState, connected: bool) {
         }
         .into(),
     );
+}
+
+/// Gets the path to the save file we should use at this time (save files
+/// include the current date, so the result of this function may change on
+/// subsequent calls). This file should be in the OS-appropriate "user data"
+/// directory, and the expected directories will be created if they don't exist
+/// (assuming we have permission to do so). Only returns None if we were not
+/// able to determine a suitable directory on this OS.
+fn get_save_file_path() -> Option<PathBuf> {
+    let dirs = ProjectDirs::from_path(PathBuf::from("ydnc/time"));
+    dirs.and_then(|d| {
+        let dir = d.data_dir();
+        if fs::create_dir_all(dir).is_err() {
+            return None;
+        }
+        Some(dir.join(format!("{}.ron", Local::today().format("%F"))))
+    })
+}
+
+/// Like `get_save_file_path` but for the user's preferences. Goes in the OS
+/// preferences/config directory.
+fn get_settings_file_path() -> Option<PathBuf> {
+    let dirs = ProjectDirs::from_path(PathBuf::from("ydnc/time"));
+    dirs.and_then(|d| {
+        let dir = d.preference_dir();
+        if fs::create_dir_all(dir).is_err() {
+            return None;
+        }
+        Some(dir.join("settings.ron"))
+    })
+}
+
+fn save(today: &Vec<TimeLog>) -> io::Result<()> {
+    let filename = get_save_file_path().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Can't find or create config directory",
+        )
+    })?;
+
+    let file = fs::File::create(filename)?;
+
+    ron::ser::to_writer_pretty(file, today, ron::ser::PrettyConfig::default())
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+    Ok(())
+}
+
+fn load() -> io::Result<Vec<TimeLog>> {
+    let filename = get_save_file_path().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Can't find or create config directory",
+        )
+    })?;
+
+    let file = fs::File::open(filename)?;
+    let mut tl_vec: Vec<TimeLog> =
+        ron::de::from_reader(file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+    tl_vec.sort_unstable_by_key(|tl| tl.start);
+
+    Ok(tl_vec)
 }
 
 pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) -> io::Result<()> {
