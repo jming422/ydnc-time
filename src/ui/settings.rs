@@ -2,7 +2,7 @@ use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
-    text::{Span, Spans, Text},
+    text::{Span, Spans},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame,
 };
@@ -34,6 +34,8 @@ impl State {
 }
 
 pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
+    let open_entry = app.open_entry_number();
+
     let state = if let Page::Settings(ref mut state) = app.selected_page {
         state
     } else {
@@ -47,6 +49,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .constraints(
             [
                 Constraint::Length(1), // Instructions
+                Constraint::Length(2), // Current entry #
                 Constraint::Min(2),    // Settings editor
                 Constraint::Length(1), // Messages
             ]
@@ -54,7 +57,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         )
         .split(f.size());
 
-    let help_message = Paragraph::new(Text::from(Spans::from(if state.editing {
+    let help_message = Paragraph::new(Spans::from(if state.editing {
         vec![
             Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(": cancel | "),
@@ -74,8 +77,18 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(": change setting | changes are automatically saved"),
         ]
-    })));
+    }));
     f.render_widget(help_message, chunks[0]);
+
+    let active_num = Paragraph::new(Spans::from(vec![
+        Span::raw("Current entry #: "),
+        Span::styled(
+            open_entry.map_or(String::from("None"), |n| n.to_string()),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+    ]))
+    .block(Block::default().borders(Borders::TOP));
+    f.render_widget(active_num, chunks[1]);
 
     let settings_list = List::new(vec![ListItem::new(
         app.preferences
@@ -102,9 +115,8 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             })
             .collect::<Vec<Spans>>(),
     )])
-    .block(Block::default().borders(Borders::ALL).title("Labels"));
+    .block(Block::default().borders(Borders::ALL));
+    f.render_stateful_widget(settings_list, chunks[2], &mut state.list_state);
 
-    f.render_stateful_widget(settings_list, chunks[1], &mut state.list_state);
-
-    f.render_widget(message_widget(app), chunks[2]);
+    f.render_widget(message_widget(app), chunks[3]);
 }

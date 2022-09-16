@@ -152,6 +152,12 @@ impl App {
             end: None,
             number,
         });
+
+        if let ui::Page::Settings(ref mut state) = self.selected_page {
+            if !state.editing {
+                state.list_state.select(Some((number - 1).into()));
+            }
+        }
     }
 }
 
@@ -295,6 +301,7 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                     // keypresses, but the processing time is quite fast.
                     let mut app = app_state.lock().unwrap();
 
+                    let open_num = app.open_entry_number();
                     let App {
                         ref mut selected_page,
                         ref preferences,
@@ -364,9 +371,12 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                                         // Main thing RET does is enter editing mode
                                         state.editing = true;
 
-                                        // If no label is selected when Enter is pressed, select 0.
+                                        // If no label is selected when Enter is pressed, select the
+                                        // open entry number or 0.
                                         if state.list_state.selected().is_none() {
-                                            state.list_state.select(Some(0));
+                                            state.list_state.select(
+                                                open_num.map(|n| (n - 1).into()).or(Some(0)),
+                                            );
                                         }
                                         let selected = state.list_state.selected().unwrap();
 

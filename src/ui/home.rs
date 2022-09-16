@@ -3,7 +3,7 @@ use tui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Span, Spans, Text},
+    text::{Span, Spans},
     widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table},
     Frame,
 };
@@ -121,7 +121,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
         )
         .split(f.size());
 
-    let help_message = Paragraph::new(Text::from(Spans::from(vec![
+    let help_message = Paragraph::new(Spans::from(vec![
         Span::styled("1-8 keys", Style::default().add_modifier(Modifier::BOLD)),
         Span::raw(": track time | "),
         Span::styled("0", Style::default().add_modifier(Modifier::BOLD)),
@@ -134,7 +134,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
         Span::raw(": settings | "),
         Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
         Span::raw(": quit"),
-    ])));
+    ]));
     f.render_widget(help_message, chunks[0]);
 
     // Because integer division is truncated, we might end up with a situation where our columns
@@ -204,6 +204,9 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     } else {
         0
     };
+
+    // TODO switch from List to Table so I can horizontally align rows after the customizable labels
+    // this will probably also require changing the behavior of TimeLog::from
     let time_entries: Vec<ListItem> = app.today[today_start_at..]
         .iter()
         .map(|time_log| {
