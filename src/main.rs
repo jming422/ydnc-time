@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let sub = tracing_subscriber::fmt::layer().with_writer(non_blocking);
         tracing_subscriber::registry()
             .with(sub)
-            .with(EnvFilter::from_env("YDNC_TIME_LOG"))
+            .with(EnvFilter::from_default_env())
             .init();
 
         Some(guard)

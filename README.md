@@ -18,8 +18,8 @@ This is software to help you track how much time you spend on different types of
 
 - Cross-platform
 - Works well even with very low terminal resolution
-- Autosaves time log to a plain-text format ([RON](https://github.com/ron-rs/ron) to be specific)
-  - Saves to a directory in your `$XDG_CONFIG_HOME` (if applicable) or else in `$HOME/.ydnc/time`
+- Autosaves time log & user settings to a plain-text format ([RON](https://github.com/ron-rs/ron))
+  - Saves to the OS-appropriate config & data directories. See the [directories](https://crates.io/crates/directories) crate for details.
 - Controllable using the keyboard or using a [Timeular Tracker](https://timeular.com/tracker/)
 
 ## But why though

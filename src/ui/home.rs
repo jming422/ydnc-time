@@ -164,7 +164,6 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     let (row, cols) = make_today_row(app, nice_table_width - 2);
     let table = Table::new(vec![row])
         .block(table_block)
-        // .style()
         .column_spacing(0)
         .widths(&cols);
     f.render_widget(table, table_rect);

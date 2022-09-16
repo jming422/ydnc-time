@@ -11,12 +11,26 @@ use crate::App;
 
 use super::{message_widget, Page};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct State {
     pub editing: bool,
     pub list_state: ListState,
     pub input: String,
     pub caps_lock: bool,
+}
+
+impl State {
+    pub fn select_prev(&mut self) {
+        let current = self.list_state.selected().unwrap_or(0);
+        let prev = if current == 0 { 7 } else { current - 1 };
+        self.list_state.select(Some(prev));
+    }
+
+    pub fn select_next(&mut self) {
+        let current = self.list_state.selected().unwrap_or(7);
+        let next = if current == 7 { 0 } else { current + 1 };
+        self.list_state.select(Some(next));
+    }
 }
 
 pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
@@ -49,6 +63,8 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         ]
     } else {
         vec![
+            Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw("/"),
             Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(": back home | "),
             Span::styled("k+j", Style::default().add_modifier(Modifier::BOLD)),
@@ -56,15 +72,37 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             Span::styled("↑+↓", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(": up+down | "),
             Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(": change setting | "),
-            Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(": quit"),
+            Span::raw(": change setting | changes are automatically saved"),
         ]
     })));
     f.render_widget(help_message, chunks[0]);
 
-    let settings_list = List::new(vec![ListItem::new(vec![Spans::from(Span::raw("asdf"))])])
-        .block(Block::default().borders(Borders::ALL));
+    let settings_list = List::new(vec![ListItem::new(
+        app.preferences
+            .labels
+            .get_or_insert(Default::default())
+            .iter()
+            .enumerate()
+            .map(|(i, label)| {
+                let sel = state.list_state.selected().map_or(false, |s| s == i);
+                Spans::from(vec![
+                    Span::styled(
+                        format!("{} [{}]: ", if sel { ">" } else { " " }, i + 1),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                    if state.editing && sel {
+                        Span::styled(
+                            &state.input,
+                            Style::default().add_modifier(Modifier::UNDERLINED),
+                        )
+                    } else {
+                        Span::raw(label)
+                    },
+                ])
+            })
+            .collect::<Vec<Spans>>(),
+    )])
+    .block(Block::default().borders(Borders::ALL).title("Labels"));
 
     f.render_stateful_widget(settings_list, chunks[1], &mut state.list_state);
 

@@ -23,6 +23,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
+use tracing::info;
 use tui::{backend::Backend, Terminal};
 
 pub mod bluetooth;
@@ -89,7 +90,7 @@ where
 
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Preferences {
-    labels: Option<[String; 7]>,
+    labels: Option<[String; 8]>,
 }
 
 #[derive(Default, Debug)]
@@ -215,8 +216,8 @@ fn save_log(today: &Vec<TimeLog>) -> io::Result<()> {
         )
     })?;
 
+    info!("Saving log to {}", filename.display());
     let file = fs::File::create(filename)?;
-
     ron::ser::to_writer_pretty(file, today, ron::ser::PrettyConfig::default())
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
@@ -231,6 +232,7 @@ fn load_log() -> io::Result<Vec<TimeLog>> {
         )
     })?;
 
+    info!("Loading log from {}", filename.display());
     let file = fs::File::open(filename)?;
     let mut tl_vec: Vec<TimeLog> =
         ron::de::from_reader(file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
@@ -248,8 +250,8 @@ fn save_prefs(prefs: &Preferences) -> io::Result<()> {
         )
     })?;
 
+    info!("Saving prefs to {}", filename.display());
     let file = fs::File::create(filename)?;
-
     ron::ser::to_writer_pretty(file, prefs, ron::ser::PrettyConfig::default())
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
@@ -257,13 +259,14 @@ fn save_prefs(prefs: &Preferences) -> io::Result<()> {
 }
 
 fn load_prefs() -> io::Result<Preferences> {
-    let filename = get_save_file_path().ok_or_else(|| {
+    let filename = get_settings_file_path().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::PermissionDenied,
             "Can't find or create app data directory",
         )
     })?;
 
+    info!("Loading prefs from {}", filename.display());
     let file = fs::File::open(filename)?;
     let prefs = ron::de::from_reader(file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
@@ -273,10 +276,13 @@ fn load_prefs() -> io::Result<Preferences> {
 pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) -> io::Result<()> {
     let mut i: usize = 0;
     loop {
+        // Lock on app state to draw the UI
         {
             let mut app = app_state.lock().unwrap();
             terminal.draw(|f| ui::draw(f, &mut app))?;
         }
+        // Once drawn, release lock so other threads (like the bluetooth ones)
+        // can read+write app state between frames
 
         if event::poll(Duration::from_secs(1))? {
             match event::read()? {
@@ -284,9 +290,18 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
 
                 // The function of keys depends on which Page the user is on
                 Event::Key(key) => {
+                    // Lock for the whole duration of keypress processing,
+                    // because lots of app state changes happen in response to
+                    // keypresses, but the processing time is quite fast.
                     let mut app = app_state.lock().unwrap();
 
-                    match app.selected_page {
+                    let App {
+                        ref mut selected_page,
+                        ref preferences,
+                        ..
+                    } = *app;
+
+                    match selected_page {
                         ui::Page::Home => match key.code {
                             // Number keys 1-8 start tracking a new entry (not 9, 9 does nothing. The
                             // tracker only has 8 sides and I wanna be consistent)
@@ -296,6 +311,9 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                             // 0 and Esc stop tracking
                             KeyCode::Char('0') | KeyCode::Esc => {
                                 app.close_entry_if_open(Local::now())
+                            }
+                            KeyCode::Char('s') => {
+                                app.selected_page = ui::Page::Settings(Default::default());
                             }
                             KeyCode::Char('q') => {
                                 break;
@@ -337,20 +355,26 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                                 }
                             } else {
                                 match key.code {
-                                    KeyCode::Esc => {
+                                    KeyCode::Esc | KeyCode::Char('q') => {
                                         app.selected_page = ui::Page::Home;
                                     }
-                                    KeyCode::Up | KeyCode::Char('k') => state.list_state.select(
-                                        Some(state.list_state.selected().map_or(7, |n| n - 1)),
-                                    ),
-                                    KeyCode::Down | KeyCode::Char('j') => state.list_state.select(
-                                        Some(state.list_state.selected().map_or(0, |n| n + 1)),
-                                    ),
+                                    KeyCode::Up | KeyCode::Char('k') => state.select_prev(),
+                                    KeyCode::Down | KeyCode::Char('j') => state.select_next(),
                                     KeyCode::Enter => {
+                                        // Main thing RET does is enter editing mode
                                         state.editing = true;
-                                    }
-                                    KeyCode::Char('q') => {
-                                        break;
+
+                                        // If no label is selected when Enter is pressed, select 0.
+                                        if state.list_state.selected().is_none() {
+                                            state.list_state.select(Some(0));
+                                        }
+                                        let selected = state.list_state.selected().unwrap();
+
+                                        // Bonus thing RET does: preset the "input" page state to
+                                        // the previous value of the selected label, if any.
+                                        if let Some(ref labels) = preferences.labels {
+                                            state.input = labels[selected].clone();
+                                        }
                                     }
                                     _ => {}
                                 }
