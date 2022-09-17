@@ -1,6 +1,6 @@
 [package]
 name = "ydnc-time"
-version = "0.2.0-alpha"
+version = "0.2.0"
 authors = ["Jonathan Ming"]
 edition = "2021"
 description = "You don't need the cloud to log your time"
