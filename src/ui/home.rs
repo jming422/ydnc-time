@@ -4,7 +4,7 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame,
 };
 
@@ -205,16 +205,30 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
         0
     };
 
-    // TODO switch from List to Table so I can horizontally align rows after the customizable labels
-    // this will probably also require changing the behavior of TimeLog::from
-    let time_entries: Vec<ListItem> = app.today[today_start_at..]
-        .iter()
-        .map(|time_log| {
-            let content = vec![Spans::from(Span::raw(time_log.format(app)))];
-            ListItem::new(content)
-        })
-        .collect();
-    let time_entries = List::new(time_entries).block(Block::default().borders(Borders::ALL));
+    let label_len = app
+        .preferences
+        .labels
+        .as_ref()
+        .map_or(1, |lbls| lbls.iter().map(|s| s.len() as u16).max().unwrap());
+
+    // -_- I wish the tui crate did the widths() fn signature better. This shouldn't have to be
+    // necessary, but it is b/c of how they typed the param.
+    let widths = [
+        Constraint::Length(label_len + 2),
+        Constraint::Percentage(100),
+    ];
+    let time_entries = Table::new(
+        app.today[today_start_at..]
+            .iter()
+            .map(|time_log| {
+                let (lbl, times) = time_log.format(app);
+                Row::new(vec![lbl, times])
+            })
+            .collect::<Vec<Row>>(),
+    )
+    .block(Block::default().borders(Borders::ALL))
+    .widths(&widths)
+    .column_spacing(1);
     f.render_widget(time_entries, chunks[4]);
 
     f.render_widget(message_widget(app), chunks[5]);

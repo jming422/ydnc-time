@@ -55,17 +55,19 @@ impl TimeLog {
         pref_label.map_or_else(|| self.number.to_string(), |l| l.clone())
     }
 
-    /// For example: "[coding] from 10:02:37 to 11:23:48"
-    fn format(&self, app: &App) -> String {
-        format!(
-            "[{}] from {} {}",
-            self.label(app),
-            self.start.format("%X"),
-            if let Some(end) = self.end.as_ref() {
-                format!("to {}", end.format("%X"))
-            } else {
-                String::from("- ongoing")
-            }
+    /// For example: ("[coding]", "from 10:02:37 to 11:23:48")
+    fn format(&self, app: &App) -> (String, String) {
+        (
+            format!("[{}]", self.label(app)),
+            format!(
+                "from {} {}",
+                self.start.format("%X"),
+                if let Some(end) = self.end.as_ref() {
+                    format!("to {}", end.format("%X"))
+                } else {
+                    String::from("- ongoing")
+                }
+            ),
         )
     }
 }

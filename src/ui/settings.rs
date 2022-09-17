@@ -75,7 +75,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             Span::styled("↑+↓", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(": up+down | "),
             Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(": change setting | changes are automatically saved"),
+            Span::raw(": change setting | changes saved automatically"),
         ]
     }));
     f.render_widget(help_message, chunks[0]);
