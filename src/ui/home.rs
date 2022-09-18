@@ -220,10 +220,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     let time_entries = Table::new(
         app.today[today_start_at..]
             .iter()
-            .map(|time_log| {
-                let (lbl, times) = time_log.format(app);
-                Row::new(vec![lbl, times])
-            })
+            .map(|time_log| time_log.to_row(app))
             .collect::<Vec<Row>>(),
     )
     .block(Block::default().borders(Borders::ALL))

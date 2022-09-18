@@ -24,7 +24,13 @@ use std::{
     time::Duration,
 };
 use tracing::info;
-use tui::{backend::Backend, Terminal};
+use tui::{
+    backend::Backend,
+    style::{Modifier, Style},
+    text::{Span, Spans},
+    widgets::{Cell, Row},
+    Terminal,
+};
 
 pub mod bluetooth;
 mod legend;
@@ -55,20 +61,34 @@ impl TimeLog {
         pref_label.map_or_else(|| self.number.to_string(), |l| l.clone())
     }
 
-    /// For example: ("[coding]", "from 10:02:37 to 11:23:48")
-    fn format(&self, app: &App) -> (String, String) {
-        (
-            format!("[{}]", self.label(app)),
-            format!(
-                "from {} {}",
-                self.start.format("%X"),
-                if let Some(end) = self.end.as_ref() {
-                    format!("to {}", end.format("%X"))
-                } else {
-                    String::from("- ongoing")
-                }
-            ),
-        )
+    fn to_row(self: &TimeLog, app: &App) -> Row {
+        Row::new(vec![
+            Cell::from(format!("[{}]", self.label(app))),
+            Cell::from(Spans::from(vec![
+                Span::raw("from "),
+                Span::styled(
+                    self.start.format("%R").to_string(),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    self.start.format(":%S").to_string(),
+                    Style::default().add_modifier(Modifier::DIM),
+                ),
+                Span::raw(if self.end.is_some() { " to " } else { " - " }),
+                Span::styled(
+                    self.end
+                        .as_ref()
+                        .map_or(String::from("ongoing"), |end| end.format("%R").to_string()),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    self.end
+                        .as_ref()
+                        .map_or_else(Default::default, |end| end.format(":%S").to_string()),
+                    Style::default().add_modifier(Modifier::DIM),
+                ),
+            ])),
+        ])
     }
 }
 
