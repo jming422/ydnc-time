@@ -1,0 +1,55 @@
+name: Build release binaries
+
+on:
+  release:
+    types:
+      - published
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Cross-compile binaries
+    if: github.event_name == release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os:
+          - GNU/Linux - aarch64
+          - GNU/Linux - x86
+          - Windows - x86
+          - macOS - aarch64
+          - macOS - x86
+        include:
+          - os: macOS - aarch64
+            target: aarch64-apple-darwin
+          - os: GNU/Linux - aarch64
+            target: aarch64-unknown-linux-gnu
+          - os: macOS - x86
+            target: x86_64-apple-darwin
+          - os: Windows - x86
+            target: x86_64-pc-windows-msvc
+          - os: GNU/Linux - x86
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+      - name: Compile for ${{ matrix.os }}
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --verbose --release --target=${{ matrix.target }}
+      - name: Rename binary
+        run: mv target/release/ydnc-time target/release/ydnc-time-${{ matrix.target }}
+      - name: Upload ${{ matrix.os }} binary to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: target/release/ydnc-time-${{ matrix.target }}
+          fail_on_unmatched_files: true
