@@ -1,17 +1,16 @@
 name: Build release binaries
 
 on:
-  push
-  # release:
-  #   types:
-  #     - published
+  release:
+    types:
+      - published
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
-    name: Cross-compile binaries
+    name: Build for ${{ matrix.target.name }}
     runs-on: ${{ matrix.target.os }}
     strategy:
       fail-fast: false
@@ -26,6 +25,7 @@ jobs:
           - name: Windows - x86
             os: windows-latest
             target: x86_64-pc-windows-msvc
+            ext: .exe
           - name: GNU/Linux - x86
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -47,9 +47,9 @@ jobs:
           command: build
           args: --verbose --release --target=${{ matrix.target.target }}
       - name: Rename binary
-        run: mv target/${{ matrix.target.target }}/release/ydnc-time ./ydnc-time-${{ matrix.target.target }}
+        run: mv ./target/${{ matrix.target.target }}/release/ydnc-time${{ matrix.target.ext }} ./ydnc-time-${{ matrix.target.target }}${{ matrix.target.ext }}
       - name: Upload ${{ matrix.target.name }} binary to release
         uses: softprops/action-gh-release@v1
         with:
-          files: ydnc-time-${{ matrix.target.target }}
+          files: ydnc-time-${{ matrix.target.target }}${{ matrix.target.ext }}
           fail_on_unmatched_files: true
