@@ -12,7 +12,6 @@ env:
 jobs:
   build:
     name: Cross-compile binaries
-    if: github.event_name == 'release'
     runs-on: ${{ matrix.target.os }}
     strategy:
       matrix:
