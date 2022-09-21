@@ -48,6 +48,9 @@ jobs:
           args: --verbose --release --target=${{ matrix.target.target }}
       - name: Rename binary
         run: mv ./target/${{ matrix.target.target }}/release/ydnc-time${{ matrix.target.ext }} ./ydnc-time-${{ matrix.target.target }}${{ matrix.target.ext }}
+      - name: Strip binary (Linux)
+        if: matrix.target.os == 'ubuntu-latest'
+        run: strip ydnc-time-${{ matrix.target.target }}${{ matrix.target.ext }}
       - name: Upload ${{ matrix.target.name }} binary to release
         uses: softprops/action-gh-release@v1
         with:
