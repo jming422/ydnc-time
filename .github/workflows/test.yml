@@ -11,5 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - name: Install libdbus
+        run: sudo apt install libdbus-1-dev
       - name: Run tests
         run: cargo test --verbose
