@@ -23,7 +23,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tracing::info;
-use tracing_subscriber::{prelude::*, EnvFilter};
+use tracing_subscriber::{filter::LevelFilter, prelude::*, EnvFilter};
 use tui::{backend::CrosstermBackend, Terminal};
 
 use ydnc_time::{bluetooth::BluetoothTask, App};
@@ -38,7 +38,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let sub = tracing_subscriber::fmt::layer().with_writer(non_blocking);
         tracing_subscriber::registry()
             .with(sub)
-            .with(EnvFilter::from_default_env())
+            .with(
+                EnvFilter::builder()
+                    .with_default_directive(LevelFilter::INFO.into())
+                    .from_env_lossy(),
+            )
             .init();
 
         Some(guard)
