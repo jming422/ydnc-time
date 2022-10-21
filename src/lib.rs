@@ -206,21 +206,29 @@ pub fn lock_and_set_connected(app_state: &AppState, connected: bool) {
     );
 }
 
-/// Gets the path to the save file we should use at this time (save files
-/// include the current date, so the result of this function may change on
-/// subsequent calls). This file should be in the OS-appropriate "user data"
-/// directory, and the expected directories will be created if they don't exist
-/// (assuming we have permission to do so). Only returns None if we were not
-/// able to determine a suitable directory on this OS.
-fn get_save_file_path() -> Option<PathBuf> {
+/// Gets the path to the save file directory we should use at this time. It will
+/// be the OS-appropriate "user data" directory, and the expected directories
+/// will be created if they don't exist (assuming we have permission to do so).
+/// Only returns None if we were not able to determine a suitable directory on
+/// this OS.
+fn get_save_file_dir() -> Option<PathBuf> {
     let dirs = ProjectDirs::from_path(PathBuf::from("ydnc/time"));
     dirs.and_then(|d| {
         let dir = d.data_dir();
         if fs::create_dir_all(dir).is_err() {
             return None;
         }
-        Some(dir.join(format!("{}.ron", Local::today().format("%F"))))
+        Some(dir.to_path_buf())
     })
+}
+
+/// Gets the path to the save file we should use at this time (save files
+/// include the current date, so the result of this function may change on
+/// subsequent calls). Only returns None if we were not able to determine a
+/// suitable directory on this OS.
+fn get_save_file_path() -> Option<PathBuf> {
+    get_save_file_dir()
+        .and_then(|dir| Some(dir.join(format!("{}.ron", Local::today().format("%F")))))
 }
 
 /// Like `get_save_file_path` but for the user's preferences. Goes in the OS
@@ -332,8 +340,9 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
 
                     match selected_page {
                         ui::Page::Home => match key.code {
-                            // Number keys 1-8 start tracking a new entry (not 9, 9 does nothing. The
-                            // tracker only has 8 sides and I wanna be consistent)
+                            // Number keys 1-8 start tracking a new entry (not
+                            // 9, 9 does nothing. The tracker only has 8 sides
+                            // and I wanna be consistent)
                             KeyCode::Char(c) if ('1'..='8').contains(&c) => {
                                 app.start_entry(c.to_digit(10).unwrap() as u8)
                             }
@@ -359,7 +368,8 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                                     }
                                     KeyCode::Enter => {
                                         state.editing = false;
-                                        // mem::take will replace state.input with its default value (empty string)
+                                        // mem::take will replace state.input
+                                        // with its default value (empty string)
                                         let new_val = std::mem::take(&mut state.input);
 
                                         let edited_idx = state.list_state.selected().unwrap();
@@ -390,11 +400,12 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                                     KeyCode::Up | KeyCode::Char('k') => state.select_prev(),
                                     KeyCode::Down | KeyCode::Char('j') => state.select_next(),
                                     KeyCode::Enter => {
-                                        // Main thing RET does is enter editing mode
+                                        // enter editing mode
                                         state.editing = true;
 
-                                        // If no label is selected when Enter is pressed, select the
-                                        // open entry number or 0.
+                                        // If no label is selected when Enter is
+                                        // pressed, select the open entry number
+                                        // or 0.
                                         if state.list_state.selected().is_none() {
                                             state.list_state.select(
                                                 open_num.map(|n| (n - 1).into()).or(Some(0)),
@@ -402,8 +413,9 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                                         }
                                         let selected = state.list_state.selected().unwrap();
 
-                                        // Bonus thing RET does: preset the "input" page state to
-                                        // the previous value of the selected label, if any.
+                                        // Bonus thing RET does: preset the
+                                        // "input" page state to the previous
+                                        // value of the selected label, if any.
                                         if let Some(ref labels) = preferences.labels {
                                             state.input = labels[selected].clone();
                                         }
@@ -420,10 +432,11 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
         }
 
         // HEY YOU BE CAREFUL WITH THIS ONE
-        // This obtains a lock on the mutex for the rest of this loop! That is good for now, since
-        // the rest of the loop is either 1) reset app's message or 2) autosave the app and then
-        // change message, but if you refactor the loop to do more stuff after autosave/messaging
-        // then you really oughta limit the scope of this lock more!
+        // This obtains a lock on the mutex for the rest of this loop! That is
+        // good for now, since the rest of the loop is either 1) reset app's
+        // message or 2) autosave the app and then change message, but if you
+        // refactor the loop to do more stuff after autosave/messaging then you
+        // really oughta limit the scope of this lock more!
         let mut app = app_state.lock().unwrap();
         // 300s = every 5 min do an autosave
         if i == 300 {
@@ -441,9 +454,11 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                 let entry_ref = app.today.last_mut().unwrap();
                 // Copy it (pretty nice these TimeLog's impl Copy huh?)
                 let ret = Some(*entry_ref);
-                // Close it inside `app.today`, setting its end date to the end of yesterday
+                // Close it inside `app.today`, setting its end date to the end
+                // of yesterday
                 entry_ref.end = Some(
-                    // This is the latest representable DateTime on the same calendar day
+                    // This is the latest representable DateTime on the same
+                    // calendar day
                     entry_ref.start.date().succ().and_hms(0, 0, 0)
                         - chrono::Duration::nanoseconds(1),
                 );

@@ -12,22 +12,26 @@ use crate::{legend, App, TimeLog};
 
 use super::{message_widget, number_to_color};
 
-/// Returns a tuple of start (inclusive) and end (exclusive) x-coordinates for drawing the specified
-/// absolute duration
+/// Returns a tuple of start (inclusive) and end (exclusive) x-coordinates for
+/// drawing the specified absolute duration
 fn duration_to_x_coords(start: NaiveTime, end: NaiveTime, max_width: u16) -> (u16, u16) {
-    // - Width is in "pixels" (technically not pixels but whatever I'm gonna call them that)
-    // - The width must be divisible by 24 (this is guaranteed by the layout in ui() at the moment)
+    // - Width is in "pixels" (technically not pixels but whatever I'm gonna
+    // call them that)
+    // - The width must be divisible by 24 (this is guaranteed by the layout in
+    // ui() at the moment)
     // - Each 1/24th of width is an hour
-    // By relying on these facts we can compute the coordinates in pixels of a given duration:
+    // By relying on these facts we can compute the coordinates in pixels of a
+    // given duration:
 
     // num_secs / number_of_secs_in_day = % of the day this duration fills
     // multiply that % by the width then round and clamp
-    // `as` automatically clamps to the max/min value of the primitive integer type
+    // `as` automatically clamps to the max/min value of the integer type
 
-    // Okay also I want my table scale to go from 05:00 to 04:59, instead of 00:00 to 23:59. Good
-    // thing NaiveTime subraction wraps around! This makes it so that values approaching (but not
-    // exceeding) 5am will be at the "end" of the table, while numbers at and after 5am will be at
-    // the "beginning"
+    // Okay also I want my table scale to go from 05:00 to 04:59, instead of
+    // 00:00 to 23:59. Good thing NaiveTime subraction wraps around! This makes
+    // it so that values approaching (but not exceeding) 5am will be at the
+    // "end" of the table, while numbers at and after 5am will be at the
+    // "beginning"
     let start_percent_of_day =
         ((start - chrono::Duration::hours(5)).num_seconds_from_midnight() as f32) / 86400.0;
     let end_percent_of_day =
@@ -57,8 +61,8 @@ fn make_today_row(app: &App, max_width: u16) -> (Row, Vec<Constraint>) {
     let mut row: Vec<Cell> = Vec::new();
     let mut current_px = 0;
 
-    // Assume it's already sorted, since load() does this, and you're not manually typing in entries
-    // in the future are you ;)
+    // Assume it's already sorted, since load() does this, and you're not
+    // manually typing in entries in the future are you ;)
     for (i, curr_tl) in today_iter {
         // Insert the current cell
         let coords = if let Some(end) = curr_tl.end {
@@ -137,14 +141,15 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     ]));
     f.render_widget(help_message, chunks[0]);
 
-    // Because integer division is truncated, we might end up with a situation where our columns
-    // would have been e.g. 142/24 = 5.9166666667 pixels wide, which would get truncated to 5px,
-    // which would make our table look all squished and only take up part of the screen. To fix
-    // this, we have to ensure that our table inner rectangle width is always divisible by 24.
+    // Because integer division is truncated, we might end up with a situation
+    // where our columns would have been e.g. 142/24 = 5.9166666667 pixels wide,
+    // which would get truncated to 5px, which would make our table look all
+    // squished and only take up part of the screen. To fix this, we have to
+    // ensure that our table inner rectangle width is always divisible by 24.
 
     let table_block = Block::default().borders(Borders::ALL).title("Today");
-    // Blocks with borders take up 1px on either side, so we have to increase the whole table Rect
-    // width by 2
+    // Blocks with borders take up 1px on either side, so we have to increase
+    // the whole table Rect width by 2
     let nice_table_width = ((table_block.inner(chunks[1]).width / 24) * 24) + 2;
     let table_horiz_margin = (chunks[1].width - nice_table_width) / 2;
     let table_layout = Layout::default()
@@ -211,8 +216,9 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
         .as_ref()
         .map_or(1, |lbls| lbls.iter().map(|s| s.len() as u16).max().unwrap());
 
-    // -_- I wish the tui crate did the widths() fn signature better. This shouldn't have to be
-    // necessary, but it is b/c of how they typed the param.
+    // -_- I wish the tui crate did the widths() fn signature better. This
+    // shouldn't have to be necessary, but it is b/c of how they typed the
+    // param.
     let widths = [
         Constraint::Length(label_len + 2),
         Constraint::Percentage(100),
@@ -240,7 +246,9 @@ mod tests {
         // max_width is supposed to always be divisible by 24
         let mw = 24;
         assert_eq!(
-            (0, 24), // Remember end is exclusive, think of it like a range: 0..24 and not 0..=24
+            // Remember end is exclusive, think of it like a range: 0..24 and
+            // not 0..=24
+            (0, 24),
             duration_to_x_coords(
                 NaiveTime::from_hms(5, 0, 0),
                 NaiveTime::from_hms(4, 59, 59),
@@ -304,9 +312,10 @@ mod tests {
             )
         );
         assert_eq!(
-            // this one is the worst-case rounding scenario, because at 1px per hour resolution,
-            // XX:29:59 rounds down to XX and YY:30:00 rounds up to YY+1, -- in this case that
-            // causes this 1h+1s duration to show up as 2 hours!
+            // this one is the worst-case rounding scenario, because at 1px per
+            // hour resolution, XX:29:59 rounds down to XX and YY:30:00 rounds
+            // up to YY+1, -- in this case that causes a 1h+1s duration to show
+            // up as 2 hours!
             (18, 18 + 2),
             duration_to_x_coords(
                 NaiveTime::from_hms(23, 29, 59),

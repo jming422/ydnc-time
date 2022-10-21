@@ -50,7 +50,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("ydnc-time starting");
 
-    // modeled after https://github.com/fdehau/tui-rs/blob/master/examples/user_input.rs
+    // modeled after
+    // https://github.com/fdehau/tui-rs/blob/master/examples/user_input.rs
+
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -58,8 +60,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // create app and wrap it so that our bluetooth and UI threads can share it (bluetooth thread
-    // will only write to state; UI will both read and write to it)
+    // create app and wrap it so that our bluetooth and UI threads can share it
+    // (bluetooth thread will only write to state; UI will both read and write
+    // to it)
     let app_state = Arc::new(Mutex::new(App::load_or_default()));
 
     // start bluetooth handler in "the background" as a tokio task

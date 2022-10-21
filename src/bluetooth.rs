@@ -19,11 +19,12 @@ use crate::{lock_and_set_connected, AppState};
 // const TRACKER_SERVICE: Uuid = uuid!("c7e70010-c847-11e6-8175-8c89a55d403c");
 const TRACKER_SIDE_CH: Uuid = uuid!("c7e70012-c847-11e6-8175-8c89a55d403c");
 
-/// This macro adds a timeout, awaits it, unnests the Result, and returns an anyhow Result. The
-/// Error type will be either `tokio::time::error::Elapsed` or `btleplug::Error`.
+/// This macro adds a timeout, awaits it, unnests the Result, and returns an
+/// anyhow Result. The Error type will be either `tokio::time::error::Elapsed`
+/// or `btleplug::Error`.
 ///
-/// Because it does Result unnesting, the given future must return a Result. If it doesn't, you
-/// should just use time::timeout() without this macro.
+/// Because it does Result unnesting, the given future must return a Result. If
+/// it doesn't, you should just use time::timeout() without this macro.
 macro_rules! await_timeout {
     ($secs:literal, $fut:expr) => {
         time::timeout(Duration::from_secs($secs), $fut)
@@ -43,12 +44,14 @@ enum State {
     Connected(Peripheral, Characteristic),
 }
 
-/// Probably best to, no matter what this function returns, always try and re-call it after a few
-/// seconds if/whenever it does return. This function returning /should/ always indicate some
-/// OS-level error such as, "you don't have permission to access a bluetooth adapter" or "the
-/// adapter is turned off" or something like that, so I think we should keep poking at it every once
-/// in a while to see if e.g. the user turned their bluetooth adapter back on. What's the harm in
-/// generating some non-user-visible errors every once in a while anyway?
+/// Probably best to, no matter what this function returns, always try and
+/// re-call it after a few seconds if/whenever it does return. This function
+/// returning /should/ always indicate some OS-level error such as, "you don't
+/// have permission to access a bluetooth adapter" or "the adapter is turned
+/// off" or something like that, so I think we should keep poking at it every
+/// once in a while to see if e.g. the user turned their bluetooth adapter back
+/// on. What's the harm in generating some non-user-visible errors every once in
+/// a while anyway?
 async fn create_conn_mgr(
     app_state: &AppState,
     state_tx: &mpsc::UnboundedSender<State>,
@@ -65,17 +68,11 @@ async fn create_conn_mgr(
 
     let _ = state_tx.send(State::Connecting);
 
-    // Each adapter has an event stream, we fetch via events(), simplifying the type, this will
-    // return what is essentially a Future<Result<Stream<Item=CentralEvent>>>.
     let mut events = central.events().await?;
 
-    // start scanning for devices
     central.start_scan(ScanFilter::default()).await?;
     let mut scanning = true;
 
-    // Print based on whatever the event receiver outputs. Note that the event receiver blocks, so
-    // in a real program, this should be run in its own thread (not task, as this library does not
-    // yet use async channels).
     let mut tracker_id: Option<PeripheralId> = None;
     while let Some(event) = events.next().await {
         match event {
@@ -118,7 +115,6 @@ async fn create_conn_mgr(
                             continue;
                         }
 
-                        // find the characteristic we want
                         let chars = p.characteristics();
                         let cmd_char = chars.into_iter().find(|c| c.uuid == TRACKER_SIDE_CH);
                         if cmd_char.is_none() {
@@ -178,9 +174,9 @@ async fn create_conn_mgr(
         }
     }
 
-    // The only way to get here is if the bluetooth central's event stream is terminated. In theory
-    // this shouldn't happen, unless perhaps the bluetooth adapter is shut down by the OS or
-    // something.
+    // The only way to get here is if the bluetooth central's event stream is
+    // terminated. In theory this shouldn't happen, unless perhaps the bluetooth
+    // adapter is shut down by the OS or something.
     Ok(())
 }
 
@@ -238,11 +234,13 @@ async fn subscribe(
 
     if let Some(&side_num) = current_value.first() {
         info!("...got {:?}", side_num);
-        // If the tracker is not on a side (sides are 1-8, other numbers are edges), don't do anything
+        // If the tracker is not on a side (sides are 1-8, other numbers are
+        // edges), don't do anything
         if (1..=8).contains(&side_num) {
             info!("Setting initial state to side {}", side_num);
             let mut app = app_state.lock().unwrap();
-            // Only do something if there is NOT an already open entry with the same number
+            // Only do something if there is NOT an already open entry with the
+            // same number
             if app.open_entry_number().map_or(true, |n| n != side_num) {
                 app.start_entry(side_num);
             }
@@ -250,7 +248,8 @@ async fn subscribe(
     }
 
     loop {
-        // If we don't get a new notification in 5 seconds, check on the tracker's connection status
+        // If we don't get a new notification in 5 seconds, check on the
+        // tracker's connection status
         match time::timeout(Duration::from_secs(5), notifs.next()).await {
             Err(_) => {
                 if !ensure_connection(tracker).await? {
@@ -267,7 +266,8 @@ async fn subscribe(
                     match side_num {
                         1..=8 => {
                             info!("Tracker switched to side {:?}", side_num);
-                            // Only do something if there is NOT an already open entry with the same number
+                            // Only do something if there is NOT an already open
+                            // entry with the same number
                             if app.open_entry_number().map_or(true, |n| n != side_num) {
                                 app.start_entry(side_num);
                             }
@@ -311,7 +311,7 @@ fn spawn_sub_task(tracker: Peripheral, chr: Characteristic, app_state: AppState)
 async fn start_subscriber(app_state: &AppState, mut state_rx: mpsc::UnboundedReceiver<State>) {
     let mut handler: Option<(JoinHandle<()>, Peripheral)> = None;
 
-    // Initialization is different -- we can take some shortcuts during this phase
+    // Initialization is different; we can take some shortcuts during this phase
     while let Some(res) = state_rx.recv().await {
         match res {
             State::Stopping => {
@@ -330,7 +330,8 @@ async fn start_subscriber(app_state: &AppState, mut state_rx: mpsc::UnboundedRec
         }
     }
 
-    // After initialization, no more shortcuts, we have to actually handle all the state changes
+    // After initialization, no more shortcuts, we have to actually handle all
+    // the state changes
     while let Some(res) = state_rx.recv().await {
         match res {
             State::Connecting | State::Starting => {
@@ -393,8 +394,8 @@ impl BluetoothTask {
         }
     }
 
-    /// Gracefully shuts down a BluetoothTask. If the task had panicked, raise the panic on the
-    /// thread calling this function.
+    /// Gracefully shuts down a BluetoothTask. If the task had panicked, raise
+    /// the panic on the thread calling this function.
     pub async fn stop(self) {
         let BluetoothTask {
             state_tx,
@@ -407,9 +408,10 @@ impl BluetoothTask {
         // Connection manager can just be aborted roughly, no cleanup necessary
         conn_mgr.abort();
 
-        // Subscriber has some cleanup to do -- mainly, disconnecting from the tracker -- so notify
-        // it and await its graceful stop. Silently ignore a send() Err because this would just mean
-        // that the bluetooth task has stopped already.
+        // Subscriber has some cleanup to do -- mainly, disconnecting from the
+        // tracker -- so notify it and await its graceful stop. Silently ignore
+        // a send() Err because this would just mean that the bluetooth task has
+        // stopped already.
         let _ = state_tx.send(State::Stopping);
         // If the subscriber task panicked, resume the panic here
         if let Err(join_error) = subscriber.await {
