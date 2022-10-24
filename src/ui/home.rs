@@ -134,6 +134,8 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
         Span::raw(": stop tracking | "),
         // Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
         // Span::raw(": edit entries | "),
+        Span::styled("h", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(": history/stats | "),
         Span::styled("s", Style::default().add_modifier(Modifier::BOLD)),
         Span::raw(": settings | "),
         Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),

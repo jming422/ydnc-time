@@ -7,13 +7,15 @@ use tui::{
 
 use crate::App;
 
-mod home;
-mod settings;
+pub mod home;
+pub mod settings;
+pub mod stats;
 
 #[derive(Default, Debug)]
 pub enum Page {
     #[default]
     Home,
+    Stats(stats::State),
     Settings(settings::State),
 }
 
@@ -39,6 +41,7 @@ fn message_widget(app: &App) -> Paragraph {
 pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     match app.selected_page {
         Page::Home => home::draw(f, app),
+        Page::Stats(_) => stats::draw(f, app),
         Page::Settings(_) => settings::draw(f, app),
     }
 }

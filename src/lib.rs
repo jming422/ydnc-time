@@ -23,7 +23,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tracing::info;
+use tracing::{info, warn};
 use tui::{
     backend::Backend,
     style::{Modifier, Style},
@@ -34,6 +34,7 @@ use tui::{
 
 pub mod bluetooth;
 mod legend;
+mod stats;
 mod ui;
 
 #[derive(Debug, Deserialize, Serialize, Copy, Clone)]
@@ -227,8 +228,7 @@ fn get_save_file_dir() -> Option<PathBuf> {
 /// subsequent calls). Only returns None if we were not able to determine a
 /// suitable directory on this OS.
 fn get_save_file_path() -> Option<PathBuf> {
-    get_save_file_dir()
-        .and_then(|dir| Some(dir.join(format!("{}.ron", Local::today().format("%F")))))
+    get_save_file_dir().map(|dir| dir.join(format!("{}.ron", Local::today().format("%F"))))
 }
 
 /// Like `get_save_file_path` but for the user's preferences. Goes in the OS
@@ -260,14 +260,7 @@ fn save_log(today: &Vec<TimeLog>) -> io::Result<()> {
     Ok(())
 }
 
-fn load_log() -> io::Result<Vec<TimeLog>> {
-    let filename = get_save_file_path().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "Can't find or create app data directory",
-        )
-    })?;
-
+fn load_log_file(filename: PathBuf) -> io::Result<Vec<TimeLog>> {
     info!("Loading log from {}", filename.display());
     let file = fs::File::open(filename)?;
     let mut tl_vec: Vec<TimeLog> =
@@ -276,6 +269,17 @@ fn load_log() -> io::Result<Vec<TimeLog>> {
     tl_vec.sort_unstable_by_key(|tl| tl.start);
 
     Ok(tl_vec)
+}
+
+fn load_log() -> io::Result<Vec<TimeLog>> {
+    let filename = get_save_file_path().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Can't find or create app data directory",
+        )
+    })?;
+
+    load_log_file(filename)
 }
 
 fn save_prefs(prefs: &Preferences) -> io::Result<()> {
@@ -307,6 +311,25 @@ fn load_prefs() -> io::Result<Preferences> {
     let prefs = ron::de::from_reader(file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     Ok(prefs)
+}
+
+fn load_history() -> io::Result<[stats::TimeStats; 8]> {
+    if let Some(dir) = get_save_file_dir() {
+        let logs = fs::read_dir(dir)?
+            .filter_map(|res| {
+                let r = res.and_then(|e| load_log_file(e.path()));
+                if let Err(e) = r.as_ref() {
+                    warn!("Unable to load history from a file in the save dir: {}", e);
+                }
+                r.ok()
+            })
+            .flatten();
+
+        Ok(stats::compute_stats(logs))
+    } else {
+        warn!("Unable to load history: cannot locate and/or open save file directory");
+        Ok([stats::TimeStats::default(); 8])
+    }
 }
 
 pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) -> io::Result<()> {
@@ -350,11 +373,29 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                             KeyCode::Char('0') | KeyCode::Esc => {
                                 app.close_entry_if_open(Local::now())
                             }
+                            KeyCode::Char('h') => {
+                                app.selected_page = ui::Page::Stats(Default::default());
+                                // Draw the loading screen real quick
+                                terminal.draw(|f| ui::draw(f, &mut app))?;
+                                // Load state from file, and let the normal loop
+                                // continue. TODO Yes I know its bad to block
+                                // the UI thread on I/O but I'll get to making
+                                // this async later
+                                app.selected_page =
+                                    ui::Page::Stats(ui::stats::State::new(load_history()?));
+                            }
                             KeyCode::Char('s') => {
                                 app.selected_page = ui::Page::Settings(Default::default());
                             }
                             KeyCode::Char('q') => {
                                 break;
+                            }
+                            _ => {}
+                        },
+
+                        ui::Page::Stats(_) => match key.code {
+                            KeyCode::Esc | KeyCode::Char('q') => {
+                                app.selected_page = ui::Page::Home;
                             }
                             _ => {}
                         },

@@ -39,7 +39,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let state = if let Page::Settings(ref mut state) = app.selected_page {
         state
     } else {
-        panic!("Can't render settings page when the app is in home page state!")
+        panic!("Can't render settings page when the app isn't in settings page state!")
     };
 
     let chunks = Layout::default()
