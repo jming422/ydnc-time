@@ -1,10 +1,8 @@
-use chrono::Local;
-
 use crate::TimeLog;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TimeStats {
-    pub number: u8,
+    pub task_number: u8,
     pub count: u16,
     pub total: chrono::Duration,
     pub mean: chrono::Duration,
@@ -13,7 +11,7 @@ pub struct TimeStats {
 impl Default for TimeStats {
     fn default() -> Self {
         Self {
-            number: Default::default(),
+            task_number: Default::default(),
             count: Default::default(),
             total: chrono::Duration::zero(),
             mean: chrono::Duration::zero(),
@@ -21,6 +19,7 @@ impl Default for TimeStats {
     }
 }
 
+#[derive(Debug)]
 struct TimeStatsBuilder {
     number: u8,
     count: u16,
@@ -40,7 +39,7 @@ impl TimeStatsBuilder {
         self.count += 1;
         // For some reason, chrono::Duration implements Add for itself, but not
         // AddAssign? Weird.
-        self.total = self.total + (entry.end.unwrap_or_else(Local::now) - entry.start);
+        self.total = self.total + (entry.end.unwrap_or(entry.start) - entry.start);
         self
     }
 
@@ -48,7 +47,7 @@ impl TimeStatsBuilder {
     // build() only take `&self` instead of `self`
     fn build(&self) -> TimeStats {
         TimeStats {
-            number: self.number,
+            task_number: self.number,
             count: self.count,
             total: self.total,
             mean: self.total / (self.count as i32),

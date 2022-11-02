@@ -13,11 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, NaiveDate};
 use crossterm::event::{self, Event, KeyCode};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::{
+    ffi::OsStr,
     fs, io,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -37,6 +38,18 @@ mod legend;
 mod stats;
 mod ui;
 
+fn get_pref_label(number: u8, labels: Option<&[String; 8]>) -> Option<String> {
+    labels
+        .and_then(|lbls| lbls.get((number - 1) as usize))
+        .and_then(|lbl| {
+            if lbl.is_empty() {
+                None
+            } else {
+                Some(lbl.clone())
+            }
+        })
+}
+
 #[derive(Debug, Deserialize, Serialize, Copy, Clone)]
 pub struct TimeLog {
     start: DateTime<Local>,
@@ -52,14 +65,8 @@ impl TimeLog {
     /// Returns the user-set label for this log if they've set one, else returns
     /// its number as a String
     fn label(&self, app: &App) -> String {
-        let pref_label = app
-            .preferences
-            .labels
-            .as_ref()
-            .and_then(|lbls| lbls.get((self.number - 1) as usize))
-            .and_then(|lbl| if lbl.is_empty() { None } else { Some(lbl) });
-
-        pref_label.map_or_else(|| self.number.to_string(), |l| l.clone())
+        get_pref_label(self.number, app.preferences.labels.as_ref())
+            .unwrap_or_else(|| self.number.to_string())
     }
 
     fn to_row(self: &TimeLog, app: &App) -> Row {
@@ -260,7 +267,7 @@ fn save_log(today: &Vec<TimeLog>) -> io::Result<()> {
     Ok(())
 }
 
-fn load_log_file(filename: PathBuf) -> io::Result<Vec<TimeLog>> {
+fn load_log_file(filename: &PathBuf) -> io::Result<Vec<TimeLog>> {
     info!("Loading log from {}", filename.display());
     let file = fs::File::open(filename)?;
     let mut tl_vec: Vec<TimeLog> =
@@ -279,7 +286,7 @@ fn load_log() -> io::Result<Vec<TimeLog>> {
         )
     })?;
 
-    load_log_file(filename)
+    load_log_file(&filename)
 }
 
 fn save_prefs(prefs: &Preferences) -> io::Result<()> {
@@ -313,22 +320,50 @@ fn load_prefs() -> io::Result<Preferences> {
     Ok(prefs)
 }
 
-fn load_history() -> io::Result<[stats::TimeStats; 8]> {
+/// Returns the stats from all historical files available in the save directory.
+/// Includes TimeStats for each task as well as the minimum dated file located
+/// if available.
+fn load_history() -> io::Result<([stats::TimeStats; 8], Option<NaiveDate>)> {
     if let Some(dir) = get_save_file_dir() {
-        let logs = fs::read_dir(dir)?
+        let (filenames, logs): (Vec<_>, Vec<_>) = fs::read_dir(dir)?
             .filter_map(|res| {
-                let r = res.and_then(|e| load_log_file(e.path()));
+                let path = res.map(|e| e.path());
+
+                // If no path, no extension, or extension != .ron, return None
+                // to skip this file. Else unwrap the successfully read path.
+                if path.as_ref().map_or(true, |p| {
+                    p.extension().map_or(true, |ext| ext != OsStr::new("ron"))
+                }) {
+                    return None;
+                }
+                let path = path.unwrap();
+
+                let r = load_log_file(&path).map(|loaded_log| {
+                    (
+                        path.file_name()
+                            .expect("loadable files have names")
+                            .to_string_lossy()
+                            .into_owned(),
+                        loaded_log,
+                    )
+                });
                 if let Err(e) = r.as_ref() {
                     warn!("Unable to load history from a file in the save dir: {}", e);
                 }
                 r.ok()
             })
-            .flatten();
+            .unzip();
 
-        Ok(stats::compute_stats(logs))
+        Ok((
+            stats::compute_stats(logs.into_iter().flatten()),
+            filenames
+                .into_iter()
+                .filter_map(|name| name.trim_end_matches(".ron").parse().ok())
+                .min(),
+        ))
     } else {
         warn!("Unable to load history: cannot locate and/or open save file directory");
-        Ok([stats::TimeStats::default(); 8])
+        Ok(([stats::TimeStats::default(); 8], None))
     }
 }
 
@@ -374,15 +409,16 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                                 app.close_entry_if_open(Local::now())
                             }
                             KeyCode::Char('h') => {
-                                app.selected_page = ui::Page::Stats(Default::default());
+                                app.selected_page = ui::Page::Stats(None);
                                 // Draw the loading screen real quick
                                 terminal.draw(|f| ui::draw(f, &mut app))?;
                                 // Load state from file, and let the normal loop
                                 // continue. TODO Yes I know its bad to block
                                 // the UI thread on I/O but I'll get to making
                                 // this async later
+                                let (stats, min_date) = load_history()?;
                                 app.selected_page =
-                                    ui::Page::Stats(ui::stats::State::new(load_history()?));
+                                    ui::Page::Stats(Some(ui::stats::State::new(stats, min_date)));
                             }
                             KeyCode::Char('s') => {
                                 app.selected_page = ui::Page::Settings(Default::default());

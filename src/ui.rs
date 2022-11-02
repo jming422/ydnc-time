@@ -10,12 +10,13 @@ use crate::App;
 pub mod home;
 pub mod settings;
 pub mod stats;
+pub mod widgets;
 
 #[derive(Default, Debug)]
 pub enum Page {
     #[default]
     Home,
-    Stats(stats::State),
+    Stats(Option<stats::State>),
     Settings(settings::State),
 }
 
