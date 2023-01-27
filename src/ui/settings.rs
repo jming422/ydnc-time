@@ -2,36 +2,16 @@ use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
-    text::{Span, Spans},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    text::{Span, Spans, Text},
+    widgets::{Block, Borders, ListState, Paragraph},
     Frame,
 };
 
 use crate::App;
 
-use super::{message_widget, Page};
+use super::{editable_list::EditableList, message_widget, Page};
 
-#[derive(Debug, Default)]
-pub struct State {
-    pub editing: bool,
-    pub list_state: ListState,
-    pub input: String,
-    pub caps_lock: bool,
-}
-
-impl State {
-    pub fn select_prev(&mut self) {
-        let current = self.list_state.selected().unwrap_or(0);
-        let prev = if current == 0 { 7 } else { current - 1 };
-        self.list_state.select(Some(prev));
-    }
-
-    pub fn select_next(&mut self) {
-        let current = self.list_state.selected().unwrap_or(7);
-        let next = if current == 7 { 0 } else { current + 1 };
-        self.list_state.select(Some(next));
-    }
-}
+pub type State = EditableList<ListState, String>;
 
 pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let open_entry = app.open_entry_number();
@@ -69,13 +49,13 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw("/"),
             Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(": back home | "),
+            Span::raw(": back | "),
             Span::styled("k+j", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw("/"),
             Span::styled("↑+↓", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(": up+down | "),
             Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(": change setting | changes saved automatically"),
+            Span::raw(": edit | changes saved automatically"),
         ]
     }));
     f.render_widget(help_message, chunks[0]);
@@ -90,33 +70,28 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     .block(Block::default().borders(Borders::TOP));
     f.render_widget(active_num, chunks[1]);
 
-    let settings_list = List::new(vec![ListItem::new(
-        app.preferences
-            .labels
-            .get_or_insert(Default::default())
-            .iter()
-            .enumerate()
-            .map(|(i, label)| {
-                let sel = state.list_state.selected().map_or(false, |s| s == i);
-                Spans::from(vec![
-                    Span::styled(
-                        format!("{} [{}]: ", if sel { ">" } else { " " }, i + 1),
-                        Style::default().add_modifier(Modifier::BOLD),
-                    ),
-                    if state.editing && sel {
-                        Span::styled(
-                            &state.input,
-                            Style::default().add_modifier(Modifier::UNDERLINED),
-                        )
-                    } else {
-                        Span::raw(label)
-                    },
-                ])
-            })
-            .collect::<Vec<Spans>>(),
-    )])
-    .block(Block::default().borders(Borders::ALL));
-    f.render_stateful_widget(settings_list, chunks[2], &mut state.list_state);
+    state.draw_list(f, chunks[2], render_item);
 
     f.render_widget(message_widget(app), chunks[3]);
+}
+
+fn render_item<'a>(
+    i: usize,
+    item: &'a String,
+    input: &'a String,
+    sel: bool,
+    editing: bool,
+) -> Text<'a> {
+    Spans::from(vec![
+        Span::styled(
+            format!("{} [{}]: ", if sel { ">" } else { " " }, i + 1),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        if editing && sel {
+            Span::styled(input, Style::default().add_modifier(Modifier::UNDERLINED))
+        } else {
+            Span::raw(item)
+        },
+    ])
+    .into()
 }

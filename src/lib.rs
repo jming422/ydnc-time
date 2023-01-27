@@ -392,12 +392,11 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                     let open_num = app.open_entry_number();
                     let App {
                         ref mut selected_page,
-                        ref preferences,
                         ..
                     } = *app;
 
                     match selected_page {
-                        ui::Page::Home => match key.code {
+                        ui::Page::Home(ref mut _state) => match key.code {
                             // Number keys 1-8 start tracking a new entry (not
                             // 9, 9 does nothing. The tracker only has 8 sides
                             // and I wanna be consistent)
@@ -421,7 +420,13 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                                     ui::Page::Stats(Some(ui::stats::State::new(stats, min_date)));
                             }
                             KeyCode::Char('s') => {
-                                app.selected_page = ui::Page::Settings(Default::default());
+                                // Labels are small, few, and easily cloned
+                                app.selected_page = ui::Page::Settings(ui::settings::State::new(
+                                    app.preferences
+                                        .labels
+                                        .get_or_insert(Default::default())
+                                        .to_vec(),
+                                ));
                             }
                             KeyCode::Char('q') => {
                                 break;
@@ -431,7 +436,7 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
 
                         ui::Page::Stats(_) => match key.code {
                             KeyCode::Esc | KeyCode::Char('q') => {
-                                app.selected_page = ui::Page::Home;
+                                app.selected_page = ui::Page::Home(Default::default());
                             }
                             _ => {}
                         },
@@ -444,18 +449,14 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                                         state.input = String::new();
                                     }
                                     KeyCode::Enter => {
-                                        state.editing = false;
-                                        // mem::take will replace state.input
-                                        // with its default value (empty string)
-                                        let new_val = std::mem::take(&mut state.input);
+                                        let (edited_idx, new_val) = state.save_edit();
 
-                                        let edited_idx = state.list_state.selected().unwrap();
+                                        // Update actual value in app prefs
                                         let labels = app
                                             .preferences
                                             .labels
                                             .get_or_insert(Default::default());
                                         labels[edited_idx] = new_val;
-
                                         save_prefs(&app.preferences)?;
                                     }
                                     KeyCode::Char(c) => state.input.push(if state.caps_lock {
@@ -472,30 +473,12 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                             } else {
                                 match key.code {
                                     KeyCode::Esc | KeyCode::Char('q') => {
-                                        app.selected_page = ui::Page::Home;
+                                        app.selected_page = ui::Page::Home(Default::default());
                                     }
                                     KeyCode::Up | KeyCode::Char('k') => state.select_prev(),
                                     KeyCode::Down | KeyCode::Char('j') => state.select_next(),
                                     KeyCode::Enter => {
-                                        // enter editing mode
-                                        state.editing = true;
-
-                                        // If no label is selected when Enter is
-                                        // pressed, select the open entry number
-                                        // or 0.
-                                        if state.list_state.selected().is_none() {
-                                            state.list_state.select(
-                                                open_num.map(|n| (n - 1).into()).or(Some(0)),
-                                            );
-                                        }
-                                        let selected = state.list_state.selected().unwrap();
-
-                                        // Bonus thing RET does: preset the
-                                        // "input" page state to the previous
-                                        // value of the selected label, if any.
-                                        if let Some(ref labels) = preferences.labels {
-                                            state.input = labels[selected].clone();
-                                        }
+                                        state.start_editing(open_num.map(|n| (n - 1).into()))
                                     }
                                     _ => {}
                                 }

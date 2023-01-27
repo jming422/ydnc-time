@@ -4,13 +4,21 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+    widgets::{Block, Borders, Cell, ListState, Paragraph, Row, Table},
     Frame,
 };
 
 use crate::{legend, App, TimeLog};
 
 use super::{message_widget, number_to_color};
+
+#[derive(Debug, Default)]
+pub struct State {
+    pub editing: bool,
+    pub list_state: ListState,
+    pub input: String,
+    pub caps_lock: bool,
+}
 
 /// Returns a tuple of start (inclusive) and end (exclusive) x-coordinates for
 /// drawing the specified absolute duration
@@ -126,28 +134,28 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
         .split(f.size());
 
     let help_message = Paragraph::new(Spans::from(vec![
+        Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(": quit | "),
         Span::styled("1-8 keys", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": track time | "),
+        Span::raw(": start | "),
         Span::styled("0", Style::default().add_modifier(Modifier::BOLD)),
         Span::raw("/"),
         Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": stop tracking | "),
-        // Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
-        // Span::raw(": edit entries | "),
+        Span::raw(": stop | "),
+        Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(": edit | "),
         Span::styled("h", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": history/stats | "),
+        Span::raw(": history | "),
         Span::styled("s", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": settings | "),
-        Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": quit"),
+        Span::raw(": settings"),
     ]));
     f.render_widget(help_message, chunks[0]);
 
     // Because integer division is truncated, we might end up with a situation
     // where our columns would have been e.g. 142/24 = 5.9166666667 pixels wide,
     // which would get truncated to 5px, which would make our table look all
-    // squished and only take up part of the screen. To fix this, we have to
-    // ensure that our table inner rectangle width is always divisible by 24.
+    // squished and only take up part of the screen. To fix this, we ensure that
+    // our table inner rectangle width is always divisible by 24.
 
     let table_block = Block::default().borders(Borders::ALL).title("Today");
     // Blocks with borders take up 1px on either side, so we have to increase
