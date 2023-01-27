@@ -61,7 +61,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .constraints(
             [
                 Constraint::Length(1),      // Instructions
-                Constraint::Percentage(90), // This week table
+                Constraint::Percentage(82), // This week table
                 Constraint::Percentage(8),  // Text box
                 Constraint::Length(1),      // Messages
             ]
