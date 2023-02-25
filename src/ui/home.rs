@@ -2,7 +2,7 @@ use chrono::{Local, NaiveTime, Timelike};
 use tui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Span, Spans},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
     Frame,
