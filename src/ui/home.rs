@@ -4,20 +4,38 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, Cell, ListState, Paragraph, Row, Table},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
     Frame,
 };
 
 use crate::{legend, App, TimeLog};
 
-use super::{message_widget, number_to_color};
+use super::{
+    editable_list::EditableList,
+    message_widget, number_to_color,
+    utils::{self, blinky_if_index_matches},
+    Page,
+};
 
 #[derive(Debug, Default)]
-pub struct State {
-    pub editing: bool,
-    pub list_state: ListState,
-    pub input: String,
-    pub caps_lock: bool,
+pub enum State {
+    #[default]
+    Viewing,
+    Editing {
+        state: EditableList<TableState, TimeLog>,
+        cursor_pos: usize,
+        delete_pending: bool,
+    },
+}
+
+impl State {
+    pub fn editable(options: Vec<TimeLog>) -> Self {
+        Self::Editing {
+            state: EditableList::new(options),
+            cursor_pos: 0,
+            delete_pending: false,
+        }
+    }
 }
 
 /// Returns a tuple of start (inclusive) and end (exclusive) x-coordinates for
@@ -115,7 +133,7 @@ fn format_total_time(today: &[TimeLog]) -> String {
         .to_string()
 }
 
-pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
+pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .vertical_margin(1)
@@ -132,24 +150,6 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
             .as_ref(),
         )
         .split(f.size());
-
-    let help_message = Paragraph::new(Spans::from(vec![
-        Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": quit | "),
-        Span::styled("1-8 keys", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": start | "),
-        Span::styled("0", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw("/"),
-        Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": stop | "),
-        Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": edit | "),
-        Span::styled("h", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": history | "),
-        Span::styled("s", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": settings"),
-    ]));
-    f.render_widget(help_message, chunks[0]);
 
     // Because integer division is truncated, we might end up with a situation
     // where our columns would have been e.g. 142/24 = 5.9166666667 pixels wide,
@@ -214,37 +214,166 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     f.render_widget(total_time, status_row[0]);
     f.render_widget(tracker_status, status_row[1]);
 
-    let today_start_at = if app.today.len() + 2 > (chunks[4].height as usize) {
-        (app.today.len() + 2) - (chunks[4].height as usize)
-    } else {
-        0
-    };
-
     let label_len = app
         .preferences
         .labels
         .as_ref()
         .map_or(1, |lbls| lbls.iter().map(|s| s.len() as u16).max().unwrap());
 
-    // -_- I wish the tui crate did the widths() fn signature better. This
-    // shouldn't have to be necessary, but it is b/c of how they typed the
-    // param.
     let widths = [
         Constraint::Length(label_len + 2),
         Constraint::Percentage(100),
     ];
-    let time_entries = Table::new(
-        app.today[today_start_at..]
-            .iter()
-            .map(|time_log| time_log.to_row(app))
-            .collect::<Vec<Row>>(),
-    )
-    .block(Block::default().borders(Borders::ALL))
-    .widths(&widths)
-    .column_spacing(1);
-    f.render_widget(time_entries, chunks[4]);
 
     f.render_widget(message_widget(app), chunks[5]);
+
+    let labels = app.preferences.labels.as_ref();
+    if let Page::Home(ref mut state_type) = app.selected_page {
+        if let State::Editing {
+            ref mut state,
+            ref cursor_pos,
+            ref delete_pending,
+        } = state_type
+        {
+            let help_message = Paragraph::new(Spans::from(if *delete_pending {
+                vec![
+                    Span::styled(
+                        "Are you sure?",
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" Press "),
+                    Span::styled("x", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(" to confirm deletion, "),
+                    Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(" to cancel"),
+                ]
+            } else if state.editing {
+                vec![
+                    Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(": cancel | "),
+                    Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(": save | "),
+                    Span::styled("←+→", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(": move cursor | "),
+                    Span::styled("0-9", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(": edit | "),
+                    Span::styled("Bksp", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(": (at end of log) make ongoing"),
+                ]
+            } else {
+                vec![
+                    Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw("/"),
+                    Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(": back | "),
+                    Span::styled("k+j", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw("/"),
+                    Span::styled("↑+↓", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(": up+down | "),
+                    Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(": edit | "),
+                    Span::styled("i", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(": insert | "),
+                    Span::styled("d", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(": delete | changes saved automatically"),
+                ]
+            }));
+            f.render_widget(help_message, chunks[0]);
+
+            state.draw_table(f, chunks[4], &widths, |_i, item, input, editing| -> Row {
+                if editing {
+                    // cursor positions will go:
+                    // [foo] from 00:00:00 to 00:00:00
+                    //  0         12 34 56    78 90 12
+                    let start = input.start.format("%H%M%S").to_string();
+                    let end = input
+                        .end
+                        .as_ref()
+                        .map_or(String::new(), |end| end.format("%H%M%S").to_string());
+
+                    let mut editable_numbers =
+                        start.chars().chain(end.chars()).enumerate().map(|(i, c)| {
+                            utils::blinky_if_index_matches(*cursor_pos, i + 1, c.to_string())
+                        });
+
+                    let mut spans = vec![Span::raw("from ")];
+
+                    for (i, num) in editable_numbers.by_ref().take(6).enumerate() {
+                        spans.push(num);
+                        if i < 4 && i % 2 == 1 {
+                            spans.push(Span::raw(":"));
+                        }
+                    }
+
+                    if input.end.is_some() {
+                        spans.push(Span::raw(" to "));
+
+                        for (i, num) in editable_numbers.enumerate() {
+                            spans.push(num);
+                            if i < 4 && i % 2 == 1 {
+                                spans.push(Span::raw(":"));
+                            }
+                        }
+                    } else {
+                        spans.push(Span::raw(" - "));
+                        spans.push(blinky_if_index_matches(*cursor_pos, 7, "ongoing"));
+                    }
+
+                    Row::new(vec![
+                        Cell::from(Spans::from(vec![
+                            Span::raw("["),
+                            utils::blinky_if_index_matches(
+                                *cursor_pos,
+                                0,
+                                input.resolve_label(labels),
+                            ),
+                            Span::raw("]"),
+                        ])),
+                        Cell::from(Spans::from(spans)),
+                    ])
+                } else {
+                    item.to_row_unstyled(labels)
+                }
+            });
+        } else {
+            let help_message = Paragraph::new(Spans::from(vec![
+                Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(": quit | "),
+                Span::styled("1-8 keys", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(": start | "),
+                Span::styled("0", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("/"),
+                Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(": stop | "),
+                Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(": edit | "),
+                Span::styled("h", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(": history | "),
+                Span::styled("s", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(": settings"),
+            ]));
+            f.render_widget(help_message, chunks[0]);
+
+            let today_start_at = if app.today.len() + 2 > (chunks[4].height as usize) {
+                (app.today.len() + 2) - (chunks[4].height as usize)
+            } else {
+                0
+            };
+
+            let time_entries = Table::new(
+                app.today[today_start_at..]
+                    .iter()
+                    .map(|time_log| time_log.to_row(app.preferences.labels.as_ref()))
+                    .collect::<Vec<Row>>(),
+            )
+            .block(Block::default().borders(Borders::ALL))
+            .widths(&widths)
+            .column_spacing(1);
+            f.render_widget(time_entries, chunks[4]);
+        }
+    } else {
+        panic!("Can't render settings page when the app isn't in settings page state!")
+    };
 }
 
 #[cfg(test)]

@@ -75,19 +75,13 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     f.render_widget(message_widget(app), chunks[3]);
 }
 
-fn render_item<'a>(
-    i: usize,
-    item: &'a String,
-    input: &'a String,
-    sel: bool,
-    editing: bool,
-) -> Text<'a> {
+fn render_item<'a>(i: usize, item: &'a String, input: &'a String, editing: bool) -> Text<'a> {
     Spans::from(vec![
         Span::styled(
-            format!("{} [{}]: ", if sel { ">" } else { " " }, i + 1),
+            format!("[{}]: ", i + 1),
             Style::default().add_modifier(Modifier::BOLD),
         ),
-        if editing && sel {
+        if editing {
             Span::styled(input, Style::default().add_modifier(Modifier::UNDERLINED))
         } else {
             Span::raw(item)

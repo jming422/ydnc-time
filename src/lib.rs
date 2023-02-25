@@ -27,16 +27,17 @@ use std::{
 use tracing::{info, warn};
 use tui::{
     backend::Backend,
-    style::{Modifier, Style},
     text::{Span, Spans},
     widgets::{Cell, Row},
     Terminal,
 };
+use utils::adjust_datetime_digit;
 
 pub mod bluetooth;
 mod legend;
 mod stats;
 mod ui;
+mod utils;
 
 fn get_pref_label(number: u8, labels: Option<&[String; 8]>) -> Option<String> {
     labels
@@ -57,46 +58,65 @@ pub struct TimeLog {
     number: u8,
 }
 
+impl Default for TimeLog {
+    fn default() -> Self {
+        Self {
+            start: Local::now(),
+            end: Default::default(),
+            number: 1,
+        }
+    }
+}
+
 impl TimeLog {
     fn is_open(&self) -> bool {
         self.end.is_none()
     }
 
+    fn resolve_label(&self, labels: Option<&[String; 8]>) -> String {
+        get_pref_label(self.number, labels).unwrap_or_else(|| self.number.to_string())
+    }
+
     /// Returns the user-set label for this log if they've set one, else returns
     /// its number as a String
     fn label(&self, app: &App) -> String {
-        get_pref_label(self.number, app.preferences.labels.as_ref())
-            .unwrap_or_else(|| self.number.to_string())
+        self.resolve_label(app.preferences.labels.as_ref())
     }
 
-    fn to_row(self: &TimeLog, app: &App) -> Row {
+    fn _to_row(self: &TimeLog, labels: Option<&[String; 8]>, styled: bool) -> Row {
+        let start_hm = self.start.format("%R").to_string();
+        let start_s = self.start.format(":%S").to_string();
+        let end_hm = self
+            .end
+            .as_ref()
+            .map_or(String::from("ongoing"), |end| end.format("%R").to_string());
+        let end_s = self
+            .end
+            .as_ref()
+            .map_or_else(Default::default, |end| end.format(":%S").to_string());
+
+        let maybe_bold = if styled { ui::utils::bold } else { Span::raw };
+        let maybe_dim = if styled { ui::utils::dim } else { Span::raw };
+
         Row::new(vec![
-            Cell::from(format!("[{}]", self.label(app))),
+            Cell::from(format!("[{}]", self.resolve_label(labels))),
             Cell::from(Spans::from(vec![
                 Span::raw("from "),
-                Span::styled(
-                    self.start.format("%R").to_string(),
-                    Style::default().add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    self.start.format(":%S").to_string(),
-                    Style::default().add_modifier(Modifier::DIM),
-                ),
+                maybe_bold(start_hm),
+                maybe_dim(start_s),
                 Span::raw(if self.end.is_some() { " to " } else { " - " }),
-                Span::styled(
-                    self.end
-                        .as_ref()
-                        .map_or(String::from("ongoing"), |end| end.format("%R").to_string()),
-                    Style::default().add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    self.end
-                        .as_ref()
-                        .map_or_else(Default::default, |end| end.format(":%S").to_string()),
-                    Style::default().add_modifier(Modifier::DIM),
-                ),
+                maybe_bold(end_hm),
+                maybe_dim(end_s),
             ])),
         ])
+    }
+
+    fn to_row(self: &TimeLog, labels: Option<&[String; 8]>) -> Row {
+        self._to_row(labels, true)
+    }
+
+    fn to_row_unstyled(self: &TimeLog, labels: Option<&[String; 8]>) -> Row {
+        self._to_row(labels, false)
     }
 }
 
@@ -390,49 +410,228 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                     let mut app = app_state.lock().unwrap();
 
                     let open_num = app.open_entry_number();
+                    let last_log_idx = if app.today.is_empty() {
+                        0
+                    } else {
+                        app.today.len() - 1
+                    };
+
                     let App {
                         ref mut selected_page,
                         ..
                     } = *app;
 
                     match selected_page {
-                        ui::Page::Home(ref mut _state) => match key.code {
-                            // Number keys 1-8 start tracking a new entry (not
-                            // 9, 9 does nothing. The tracker only has 8 sides
-                            // and I wanna be consistent)
-                            KeyCode::Char(c) if ('1'..='8').contains(&c) => {
-                                app.start_entry(c.to_digit(10).unwrap() as u8)
+                        ui::Page::Home(state_type) => {
+                            if let ui::home::State::Editing {
+                                ref mut state,
+                                ref mut cursor_pos,
+                                ref mut delete_pending,
+                            } = state_type
+                            {
+                                if state.editing {
+                                    match key.code {
+                                        KeyCode::Esc => {
+                                            state.editing = false;
+                                            state.input = Default::default();
+                                            *cursor_pos = 0;
+                                        }
+                                        KeyCode::Enter => {
+                                            let (edited_idx, new_val) = state.save_edit();
+                                            *cursor_pos = 0;
+                                            // Update actual value in today's timelog
+                                            app.today[edited_idx] = new_val;
+                                            save_log(&app.today)?;
+                                        }
+                                        KeyCode::Char(c @ '0'..='9') => {
+                                            match cursor_pos {
+                                                0 => {
+                                                    state.input.number =
+                                                        c.to_digit(10).unwrap() as u8;
+                                                    if *cursor_pos < 12 && !state.input.is_open()
+                                                        || *cursor_pos < 7
+                                                    {
+                                                        *cursor_pos += 1;
+                                                    }
+                                                }
+                                                1..=6 => {
+                                                    if let Some(new_dt) = adjust_datetime_digit(
+                                                        &state.input.start,
+                                                        *cursor_pos,
+                                                        c,
+                                                    ) {
+                                                        state.input.start = new_dt;
+                                                        if *cursor_pos < 12
+                                                            && !state.input.is_open()
+                                                            || *cursor_pos < 7
+                                                        {
+                                                            *cursor_pos += 1;
+                                                        }
+                                                    }
+                                                }
+                                                7..=12 => {
+                                                    let dt = state
+                                                        .input
+                                                        .end
+                                                        .get_or_insert_with(Local::now);
+
+                                                    if let Some(new_dt) = adjust_datetime_digit(
+                                                        dt,
+                                                        *cursor_pos - 6,
+                                                        c,
+                                                    ) {
+                                                        state.input.end = Some(new_dt);
+                                                        if *cursor_pos < 12
+                                                            && !state.input.is_open()
+                                                            || *cursor_pos < 7
+                                                        {
+                                                            *cursor_pos += 1;
+                                                        }
+                                                    }
+                                                }
+                                                _ => panic!(),
+                                            };
+                                        }
+                                        KeyCode::Right => {
+                                            // cursor positions will go:
+                                            // [foo] from 00:00:00 to 00:00:00
+                                            //  0         12 34 56    78 90 12
+                                            if *cursor_pos < 12 && !state.input.is_open()
+                                                || *cursor_pos < 7
+                                            {
+                                                *cursor_pos += 1;
+                                            }
+                                        }
+                                        KeyCode::Char(' ') => {
+                                            if *cursor_pos < 12 && !state.input.is_open()
+                                                || *cursor_pos < 7
+                                            {
+                                                *cursor_pos += 1;
+                                            } else if *cursor_pos == 7 && state.input.is_open() {
+                                                state.input.end = Some(Local::now());
+                                                *cursor_pos += 1;
+                                            }
+                                        }
+                                        KeyCode::Left => {
+                                            if *cursor_pos > 0 {
+                                                *cursor_pos -= 1;
+                                            }
+                                        }
+                                        KeyCode::Backspace => {
+                                            if state.selected_is_last() {
+                                                state.input.end = None;
+                                            } else if *cursor_pos > 0 {
+                                                *cursor_pos -= 1;
+                                            } else {
+                                                app.message = Some(
+                                                    "Only the final entry can be ongoing".into(),
+                                                )
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                } else {
+                                    match key.code {
+                                        KeyCode::Esc | KeyCode::Char('q') => {
+                                            if *delete_pending {
+                                                *delete_pending = false;
+                                            } else {
+                                                app.selected_page =
+                                                    ui::Page::Home(ui::home::State::Viewing);
+                                            }
+                                        }
+                                        KeyCode::Up | KeyCode::Char('k') => {
+                                            state.select_prev();
+                                            *delete_pending = false;
+                                        }
+                                        KeyCode::Down | KeyCode::Char('j') => {
+                                            state.select_next();
+                                            *delete_pending = false;
+                                        }
+                                        KeyCode::Enter => {
+                                            if !*delete_pending {
+                                                state.start_editing(Some(last_log_idx));
+                                            }
+                                        }
+                                        KeyCode::Char('i') => {
+                                            if !*delete_pending {
+                                                let (new_idx, new_val) = state
+                                                    .insert_at_selection_with(|maybe_prev| {
+                                                        let start = maybe_prev
+                                                            .map_or_else(Local::now, |tl| tl.start);
+                                                        TimeLog {
+                                                            start: start
+                                                                - chrono::Duration::seconds(1),
+                                                            end: Some(start),
+                                                            number: maybe_prev
+                                                                .map_or(1, |tl| tl.number),
+                                                        }
+                                                    });
+                                                state.start_editing(Some(new_idx));
+                                                app.today.insert(new_idx, new_val);
+                                                save_log(&app.today)?;
+                                            }
+                                        }
+                                        KeyCode::Char('d') => *delete_pending = true,
+                                        KeyCode::Char('x') => {
+                                            if *delete_pending {
+                                                *delete_pending = false;
+                                                if let Some(deleted_idx) = state.delete_selected() {
+                                                    app.today.remove(deleted_idx);
+                                                    save_log(&app.today)?;
+                                                }
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            } else {
+                                match key.code {
+                                    KeyCode::Char('q') => {
+                                        break;
+                                    }
+                                    // Number keys 1-8 start tracking a new entry (not
+                                    // 9, 9 does nothing. The tracker only has 8 sides
+                                    // and I wanna be consistent)
+                                    KeyCode::Char(c) if ('1'..='8').contains(&c) => {
+                                        app.start_entry(c.to_digit(10).unwrap() as u8);
+                                    }
+                                    // 0 and Esc stop tracking
+                                    KeyCode::Char('0') | KeyCode::Esc => {
+                                        app.close_entry_if_open(Local::now());
+                                    }
+                                    KeyCode::Char('e') => {
+                                        app.selected_page = ui::Page::Home(
+                                            ui::home::State::editable(app.today.clone()),
+                                        )
+                                    }
+                                    KeyCode::Char('h') => {
+                                        app.selected_page = ui::Page::Stats(None);
+                                        // Draw the loading screen real quick
+                                        terminal.draw(|f| ui::draw(f, &mut app))?;
+                                        // Load state from file, and let the normal loop
+                                        // continue. TODO Yes I know its bad to block
+                                        // the UI thread on I/O but I'll get to making
+                                        // this async later
+                                        let (stats, min_date) = load_history()?;
+                                        app.selected_page = ui::Page::Stats(Some(
+                                            ui::stats::State::new(stats, min_date),
+                                        ));
+                                    }
+                                    KeyCode::Char('s') => {
+                                        // Labels are small, few, and easily cloned
+                                        app.selected_page =
+                                            ui::Page::Settings(ui::settings::State::new(
+                                                app.preferences
+                                                    .labels
+                                                    .get_or_insert(Default::default())
+                                                    .to_vec(),
+                                            ));
+                                    }
+                                    _ => {}
+                                }
                             }
-                            // 0 and Esc stop tracking
-                            KeyCode::Char('0') | KeyCode::Esc => {
-                                app.close_entry_if_open(Local::now())
-                            }
-                            KeyCode::Char('h') => {
-                                app.selected_page = ui::Page::Stats(None);
-                                // Draw the loading screen real quick
-                                terminal.draw(|f| ui::draw(f, &mut app))?;
-                                // Load state from file, and let the normal loop
-                                // continue. TODO Yes I know its bad to block
-                                // the UI thread on I/O but I'll get to making
-                                // this async later
-                                let (stats, min_date) = load_history()?;
-                                app.selected_page =
-                                    ui::Page::Stats(Some(ui::stats::State::new(stats, min_date)));
-                            }
-                            KeyCode::Char('s') => {
-                                // Labels are small, few, and easily cloned
-                                app.selected_page = ui::Page::Settings(ui::settings::State::new(
-                                    app.preferences
-                                        .labels
-                                        .get_or_insert(Default::default())
-                                        .to_vec(),
-                                ));
-                            }
-                            KeyCode::Char('q') => {
-                                break;
-                            }
-                            _ => {}
-                        },
+                        }
 
                         ui::Page::Stats(_) => match key.code {
                             KeyCode::Esc | KeyCode::Char('q') => {

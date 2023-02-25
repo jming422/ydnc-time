@@ -11,11 +11,12 @@ mod editable_list;
 pub mod home;
 pub mod settings;
 pub mod stats;
+pub mod utils;
 pub mod widgets;
 
 #[derive(Debug)]
 pub enum Page {
-    Home(Option<home::State>),
+    Home(home::State),
     Stats(Option<stats::State>),
     Settings(settings::State),
 }
