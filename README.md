@@ -12,7 +12,8 @@
 
 This is software to help you track how much time you spend on different types of activities. It is highly opinionated, entirely local, and terminal only.
 
-![screenshot](https://raw.githubusercontent.com/jming422/ydnc-time/main/screenshots/screenshot1.png)
+![screenshot](https://raw.githubusercontent.com/jming422/ydnc-time/main/screenshots/screenshot4.png)
+![another screenshot](https://raw.githubusercontent.com/jming422/ydnc-time/main/screenshots/screenshot2.png)
 
 ## Main Features
 
