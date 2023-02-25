@@ -369,7 +369,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             f.render_widget(time_entries, chunks[4]);
         }
     } else {
-        panic!("Can't render settings page when the app isn't in settings page state!")
+        panic!("Can't render home page when the app isn't in home page state!")
     };
 }
 
