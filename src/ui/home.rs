@@ -13,7 +13,7 @@ use crate::{legend, App, TimeLog};
 use super::{
     editable_list::EditableList,
     message_widget, number_to_color,
-    utils::{self, blinky_if_index_matches},
+    utils::{self, blinky_if_index_matches, bold},
     Page,
 };
 
@@ -237,44 +237,41 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         {
             let help_message = Paragraph::new(Spans::from(if *delete_pending {
                 vec![
-                    Span::styled(
-                        "Are you sure?",
-                        Style::default().add_modifier(Modifier::BOLD),
-                    ),
+                    bold("Are you sure?"),
                     Span::raw(" Press "),
-                    Span::styled("x", Style::default().add_modifier(Modifier::BOLD)),
+                    bold("x"),
                     Span::raw(" to confirm deletion, "),
-                    Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+                    bold("Esc"),
                     Span::raw(" to cancel"),
                 ]
             } else if state.editing {
                 vec![
-                    Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+                    bold("Esc"),
                     Span::raw(": cancel | "),
-                    Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
+                    bold("Enter"),
                     Span::raw(": save | "),
-                    Span::styled("←+→", Style::default().add_modifier(Modifier::BOLD)),
+                    bold("←+→"),
                     Span::raw(": move cursor | "),
-                    Span::styled("0-9", Style::default().add_modifier(Modifier::BOLD)),
+                    bold("0-9"),
                     Span::raw(": edit | "),
-                    Span::styled("Bksp", Style::default().add_modifier(Modifier::BOLD)),
+                    bold("Bksp"),
                     Span::raw(": (at end of log) make ongoing"),
                 ]
             } else {
                 vec![
-                    Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+                    bold("q"),
                     Span::raw("/"),
-                    Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+                    bold("Esc"),
                     Span::raw(": back | "),
-                    Span::styled("k+j", Style::default().add_modifier(Modifier::BOLD)),
+                    bold("k+j"),
                     Span::raw("/"),
-                    Span::styled("↑+↓", Style::default().add_modifier(Modifier::BOLD)),
+                    bold("↑+↓"),
                     Span::raw(": up+down | "),
-                    Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
+                    bold("Enter"),
                     Span::raw(": edit | "),
-                    Span::styled("i", Style::default().add_modifier(Modifier::BOLD)),
+                    bold("i"),
                     Span::raw(": insert | "),
-                    Span::styled("d", Style::default().add_modifier(Modifier::BOLD)),
+                    bold("d"),
                     Span::raw(": delete | changes saved automatically"),
                 ]
             }));
@@ -337,19 +334,19 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             });
         } else {
             let help_message = Paragraph::new(Spans::from(vec![
-                Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+                bold("q"),
                 Span::raw(": quit | "),
-                Span::styled("1-8 keys", Style::default().add_modifier(Modifier::BOLD)),
+                bold("1-8 keys"),
                 Span::raw(": start | "),
-                Span::styled("0", Style::default().add_modifier(Modifier::BOLD)),
+                bold("0"),
                 Span::raw("/"),
-                Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+                bold("Esc"),
                 Span::raw(": stop | "),
-                Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
+                bold("e"),
                 Span::raw(": edit | "),
-                Span::styled("h", Style::default().add_modifier(Modifier::BOLD)),
+                bold("h"),
                 Span::raw(": history | "),
-                Span::styled("s", Style::default().add_modifier(Modifier::BOLD)),
+                bold("s"),
                 Span::raw(": settings"),
             ]));
             f.render_widget(help_message, chunks[0]);

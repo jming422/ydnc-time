@@ -10,7 +10,7 @@ use tui::{
 
 use crate::{get_pref_label, stats::TimeStats, App};
 
-use super::{message_widget, number_to_color, widgets::Donut, Page};
+use super::{message_widget, number_to_color, utils::bold, widgets::Donut, Page};
 
 #[derive(Debug)]
 pub struct State {
@@ -70,9 +70,9 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .split(f.size());
 
     let help_message = Paragraph::new(Spans::from(vec![
-        Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+        bold("q"),
         Span::raw("/"),
-        Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+        bold("Esc"),
         Span::raw(": back home"),
     ]));
     f.render_widget(help_message, topmost_vertical[0]);

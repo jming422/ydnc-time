@@ -9,7 +9,7 @@ use tui::{
 
 use crate::App;
 
-use super::{editable_list::EditableList, message_widget, Page};
+use super::{editable_list::EditableList, message_widget, utils::bold, Page};
 
 pub type State = EditableList<ListState, String>;
 
@@ -39,22 +39,22 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
     let help_message = Paragraph::new(Spans::from(if state.editing {
         vec![
-            Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+            bold("Esc"),
             Span::raw(": cancel | "),
-            Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
+            bold("Enter"),
             Span::raw(": save"),
         ]
     } else {
         vec![
-            Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+            bold("q"),
             Span::raw("/"),
-            Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+            bold("Esc"),
             Span::raw(": back | "),
-            Span::styled("k+j", Style::default().add_modifier(Modifier::BOLD)),
+            bold("k+j"),
             Span::raw("/"),
-            Span::styled("↑+↓", Style::default().add_modifier(Modifier::BOLD)),
+            bold("↑+↓"),
             Span::raw(": up+down | "),
-            Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
+            bold("Enter"),
             Span::raw(": edit | changes saved automatically"),
         ]
     }));
@@ -62,10 +62,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
     let active_num = Paragraph::new(Spans::from(vec![
         Span::raw("Current entry #: "),
-        Span::styled(
-            open_entry.map_or(String::from("None"), |n| n.to_string()),
-            Style::default().add_modifier(Modifier::BOLD),
-        ),
+        bold(open_entry.map_or(String::from("None"), |n| n.to_string())),
     ]))
     .block(Block::default().borders(Borders::TOP));
     f.render_widget(active_num, chunks[1]);
@@ -77,10 +74,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
 fn render_item<'a>(i: usize, item: &'a String, input: &'a String, editing: bool) -> Text<'a> {
     Spans::from(vec![
-        Span::styled(
-            format!("[{}]: ", i + 1),
-            Style::default().add_modifier(Modifier::BOLD),
-        ),
+        bold(format!("[{}]: ", i + 1)),
         if editing {
             Span::styled(input, Style::default().add_modifier(Modifier::UNDERLINED))
         } else {
