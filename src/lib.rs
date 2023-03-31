@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use chrono::{DateTime, Local, NaiveDate};
+use chrono::{DateTime, Days, Local, NaiveDate};
 use crossterm::event::{self, Event, KeyCode};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -31,7 +31,7 @@ use tui::{
     widgets::{Cell, Row},
     Terminal,
 };
-use utils::adjust_datetime_digit;
+use utils::{adjust_datetime_digit, datetime_with_zeroed_time};
 
 pub mod bluetooth;
 mod legend;
@@ -255,7 +255,7 @@ fn get_save_file_dir() -> Option<PathBuf> {
 /// subsequent calls). Only returns None if we were not able to determine a
 /// suitable directory on this OS.
 fn get_save_file_path() -> Option<PathBuf> {
-    get_save_file_dir().map(|dir| dir.join(format!("{}.ron", Local::today().format("%F"))))
+    get_save_file_dir().map(|dir| dir.join(format!("{}.ron", Local::now().format("%F"))))
 }
 
 /// Like `get_save_file_path` but for the user's preferences. Goes in the OS
@@ -703,10 +703,9 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
             app.message = Some("Autosaving...".into());
 
             // Check if we have advanced into a new day
-            let its_a_new_day = app
-                .today
-                .first()
-                .map_or(false, |tl| tl.start.date() != Local::today());
+            let its_a_new_day = app.today.first().map_or(false, |tl| {
+                tl.start.date_naive() != Local::now().date_naive()
+            });
 
             // If so and we have an open entry:
             let open_entry: Option<TimeLog> = if its_a_new_day && app.has_open_entry() {
@@ -718,7 +717,7 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                 entry_ref.end = Some(
                     // This is the latest representable DateTime on the same
                     // calendar day
-                    entry_ref.start.date().succ().and_hms(0, 0, 0)
+                    datetime_with_zeroed_time(&(entry_ref.start + Days::new(1)))
                         - chrono::Duration::nanoseconds(1),
                 );
                 ret
@@ -736,7 +735,7 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                 // If we cloned a previously open entry:
                 if let Some(mut entry) = open_entry {
                     // Set its start date to the beginning of today
-                    entry.start = Local::today().and_hms(0, 0, 0);
+                    entry.start = datetime_with_zeroed_time(&Local::now());
                     // Leave its `end` open and push it to the clean app.today
                     app.today.push(entry);
                 }

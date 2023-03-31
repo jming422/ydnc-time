@@ -8,7 +8,7 @@ use tui::{
     Frame,
 };
 
-use crate::{legend, App, TimeLog};
+use crate::{legend, utils::datetime_with_zeroed_time, App, TimeLog};
 
 use super::{
     editable_list::EditableList,
@@ -70,7 +70,9 @@ fn duration_to_x_coords(start: NaiveTime, end: NaiveTime, max_width: u16) -> (u1
 }
 
 fn make_today_row(app: &App, max_width: u16) -> (Row, Vec<Constraint>) {
-    let table_starts_at = Local::today().and_hms(5, 0, 0);
+    let table_starts_at = datetime_with_zeroed_time(&Local::now())
+        .with_hour(5)
+        .unwrap();
     let table_ends_at =
         table_starts_at + chrono::Duration::hours(24) - chrono::Duration::nanoseconds(1);
 
@@ -128,9 +130,7 @@ fn format_total_time(today: &[TimeLog]) -> String {
         acc + (tl.end.as_ref().copied().unwrap_or(now) - tl.start)
     });
     // Chrono's Duration doesn't get a format method, but NaiveTime does
-    (NaiveTime::from_hms(0, 0, 0) + total)
-        .format("%T")
-        .to_string()
+    (NaiveTime::MIN + total).format("%T").to_string()
 }
 
 pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
@@ -386,64 +386,64 @@ mod tests {
             // not 0..=24
             (0, 24),
             duration_to_x_coords(
-                NaiveTime::from_hms(5, 0, 0),
-                NaiveTime::from_hms(4, 59, 59),
+                NaiveTime::from_hms_opt(5, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(4, 59, 59).unwrap(),
                 mw
             )
         );
         assert_eq!(
             (0, 1),
             duration_to_x_coords(
-                NaiveTime::from_hms(5, 0, 0),
-                NaiveTime::from_hms(6, 0, 0),
+                NaiveTime::from_hms_opt(5, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(6, 0, 0).unwrap(),
                 mw
             )
         );
         assert_eq!(
             (0, 0),
             duration_to_x_coords(
-                NaiveTime::from_hms(5, 0, 0),
-                NaiveTime::from_hms(5, 29, 0),
+                NaiveTime::from_hms_opt(5, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(5, 29, 0).unwrap(),
                 mw
             )
         );
         assert_eq!(
             (0, 1),
             duration_to_x_coords(
-                NaiveTime::from_hms(5, 0, 0),
-                NaiveTime::from_hms(5, 30, 0),
+                NaiveTime::from_hms_opt(5, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(5, 30, 0).unwrap(),
                 mw
             )
         );
         assert_eq!(
             (2, 2 + 2),
             duration_to_x_coords(
-                NaiveTime::from_hms(7, 0, 0),
-                NaiveTime::from_hms(9, 0, 0),
+                NaiveTime::from_hms_opt(7, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
                 mw
             )
         );
         assert_eq!(
             (6, 6 + 9),
             duration_to_x_coords(
-                NaiveTime::from_hms(11, 0, 0),
-                NaiveTime::from_hms(19, 31, 0),
+                NaiveTime::from_hms_opt(11, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(19, 31, 0).unwrap(),
                 mw
             )
         );
         assert_eq!(
             (19, 24),
             duration_to_x_coords(
-                NaiveTime::from_hms(0, 0, 0),
-                NaiveTime::from_hms(4, 59, 59),
+                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(4, 59, 59).unwrap(),
                 mw
             )
         );
         assert_eq!(
             (17, 24),
             duration_to_x_coords(
-                NaiveTime::from_hms(22, 0, 0),
-                NaiveTime::from_hms(4, 59, 59),
+                NaiveTime::from_hms_opt(22, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(4, 59, 59).unwrap(),
                 mw
             )
         );
@@ -454,24 +454,24 @@ mod tests {
             // up as 2 hours!
             (18, 18 + 2),
             duration_to_x_coords(
-                NaiveTime::from_hms(23, 29, 59),
-                NaiveTime::from_hms(0, 30, 0),
+                NaiveTime::from_hms_opt(23, 29, 59).unwrap(),
+                NaiveTime::from_hms_opt(0, 30, 0).unwrap(),
                 mw
             )
         );
         assert_eq!(
             (19, 19 + 1),
             duration_to_x_coords(
-                NaiveTime::from_hms(23, 30, 0),
-                NaiveTime::from_hms(0, 30, 0),
+                NaiveTime::from_hms_opt(23, 30, 0).unwrap(),
+                NaiveTime::from_hms_opt(0, 30, 0).unwrap(),
                 mw
             )
         );
         assert_eq!(
             (18, 18 + 1),
             duration_to_x_coords(
-                NaiveTime::from_hms(23, 0, 0),
-                NaiveTime::from_hms(0, 29, 0),
+                NaiveTime::from_hms_opt(23, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(0, 29, 0).unwrap(),
                 mw
             )
         );
@@ -484,48 +484,48 @@ mod tests {
         assert_eq!(
             (0, 48),
             duration_to_x_coords(
-                NaiveTime::from_hms(5, 0, 0),
-                NaiveTime::from_hms(4, 59, 59),
+                NaiveTime::from_hms_opt(5, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(4, 59, 59).unwrap(),
                 mw
             )
         );
         assert_eq!(
             (0, 1),
             duration_to_x_coords(
-                NaiveTime::from_hms(5, 0, 0),
-                NaiveTime::from_hms(5, 29, 0),
+                NaiveTime::from_hms_opt(5, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(5, 29, 0).unwrap(),
                 mw
             )
         );
         assert_eq!(
             (0, 0),
             duration_to_x_coords(
-                NaiveTime::from_hms(5, 0, 0),
-                NaiveTime::from_hms(5, 14, 0),
+                NaiveTime::from_hms_opt(5, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(5, 14, 0).unwrap(),
                 mw
             )
         );
         assert_eq!(
             (0, 2),
             duration_to_x_coords(
-                NaiveTime::from_hms(5, 0, 0),
-                NaiveTime::from_hms(6, 0, 0),
+                NaiveTime::from_hms_opt(5, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(6, 0, 0).unwrap(),
                 mw
             )
         );
         assert_eq!(
             (10, 10 + 5), // Adding 5 half-hours of time from 10:00 to 12:30
             duration_to_x_coords(
-                NaiveTime::from_hms(10, 0, 0),
-                NaiveTime::from_hms(12, 30, 0),
+                NaiveTime::from_hms_opt(10, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(12, 30, 0).unwrap(),
                 mw
             )
         );
         assert_eq!(
             (34, 48),
             duration_to_x_coords(
-                NaiveTime::from_hms(22, 0, 0),
-                NaiveTime::from_hms(4, 59, 59),
+                NaiveTime::from_hms_opt(22, 0, 0).unwrap(),
+                NaiveTime::from_hms_opt(4, 59, 59).unwrap(),
                 mw
             )
         );
