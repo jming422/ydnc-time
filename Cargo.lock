@@ -1536,6 +1536,7 @@ dependencies = [
  "crossterm",
  "directories",
  "humantime",
+ "itertools",
  "lazy_static",
  "ratatui",
  "ron",

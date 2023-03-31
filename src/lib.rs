@@ -13,18 +13,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use chrono::{DateTime, Days, Local, NaiveDate};
+use chrono::{DateTime, Days, Local, Weekday};
 use crossterm::event::{self, Event, KeyCode};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::{
-    ffi::OsStr,
     fs, io,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tracing::{info, warn};
+use tracing::info;
 use tui::{
     backend::Backend,
     text::{Span, Spans},
@@ -141,6 +140,7 @@ where
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Preferences {
     labels: Option<[String; 8]>,
+    week_start_day: Option<Weekday>,
 }
 
 #[derive(Default, Debug)]
@@ -340,53 +340,6 @@ fn load_prefs() -> io::Result<Preferences> {
     Ok(prefs)
 }
 
-/// Returns the stats from all historical files available in the save directory.
-/// Includes TimeStats for each task as well as the minimum dated file located
-/// if available.
-fn load_history() -> io::Result<([stats::TimeStats; 8], Option<NaiveDate>)> {
-    if let Some(dir) = get_save_file_dir() {
-        let (filenames, logs): (Vec<_>, Vec<_>) = fs::read_dir(dir)?
-            .filter_map(|res| {
-                let path = res.map(|e| e.path());
-
-                // If no path, no extension, or extension != .ron, return None
-                // to skip this file. Else unwrap the successfully read path.
-                if path.as_ref().map_or(true, |p| {
-                    p.extension().map_or(true, |ext| ext != OsStr::new("ron"))
-                }) {
-                    return None;
-                }
-                let path = path.unwrap();
-
-                let r = load_log_file(&path).map(|loaded_log| {
-                    (
-                        path.file_name()
-                            .expect("loadable files have names")
-                            .to_string_lossy()
-                            .into_owned(),
-                        loaded_log,
-                    )
-                });
-                if let Err(e) = r.as_ref() {
-                    warn!("Unable to load history from a file in the save dir: {}", e);
-                }
-                r.ok()
-            })
-            .unzip();
-
-        Ok((
-            stats::compute_stats(logs.into_iter().flatten()),
-            filenames
-                .into_iter()
-                .filter_map(|name| name.trim_end_matches(".ron").parse().ok())
-                .min(),
-        ))
-    } else {
-        warn!("Unable to load history: cannot locate and/or open save file directory");
-        Ok(([stats::TimeStats::default(); 8], None))
-    }
-}
-
 pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) -> io::Result<()> {
     let mut i: usize = 0;
     loop {
@@ -418,6 +371,7 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
 
                     let App {
                         ref mut selected_page,
+                        ref preferences,
                         ..
                     } = *app;
 
@@ -606,17 +560,11 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                                         )
                                     }
                                     KeyCode::Char('h') => {
-                                        app.selected_page = ui::Page::Stats(None);
-                                        // Draw the loading screen real quick
-                                        terminal.draw(|f| ui::draw(f, &mut app))?;
-                                        // Load state from file, and let the normal loop
-                                        // continue. TODO Yes I know its bad to block
-                                        // the UI thread on I/O but I'll get to making
-                                        // this async later
-                                        let (stats, min_date) = load_history()?;
-                                        app.selected_page = ui::Page::Stats(Some(
-                                            ui::stats::State::new(stats, min_date),
-                                        ));
+                                        app.selected_page = ui::Page::Stats(
+                                            ui::stats::State::load_default_date_range(
+                                                &app.preferences,
+                                            )?,
+                                        );
                                     }
                                     KeyCode::Char('s') => {
                                         // Labels are small, few, and easily cloned
@@ -633,9 +581,23 @@ pub async fn run<B: Backend>(app_state: AppState, terminal: &mut Terminal<B>) ->
                             }
                         }
 
-                        ui::Page::Stats(_) => match key.code {
+                        ui::Page::Stats(ref mut state) => match key.code {
                             KeyCode::Esc | KeyCode::Char('q') => {
                                 app.selected_page = ui::Page::Home(Default::default());
+                            }
+                            KeyCode::Right
+                            | KeyCode::Down
+                            | KeyCode::Tab
+                            | KeyCode::Char('l')
+                            | KeyCode::Char('j') => {
+                                state.select_next_date_range(preferences)?;
+                            }
+                            KeyCode::Left
+                            | KeyCode::Up
+                            | KeyCode::BackTab
+                            | KeyCode::Char('h')
+                            | KeyCode::Char('k') => {
+                                state.select_prev_date_range(preferences)?;
                             }
                             _ => {}
                         },

@@ -36,8 +36,8 @@ impl Donut {
             // to do during drawing. Also, much of this work will likely be
             // useless at smaller resolutions, since it will end up drawing over
             // itself. I did a bunch of testing at various chart sizes, and
-            // landed on 360 rays having my favorite appearance.
-            let num_rays = 360;
+            // landed on at least 360 rays having my favorite appearance.
+            let num_rays = 520;
 
             // Also, especially at lower resolutions, sometimes the rays at the
             // "end" will overlap those at the "beginning." Draw in reverse

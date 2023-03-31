@@ -17,7 +17,7 @@ pub mod widgets;
 #[derive(Debug)]
 pub enum Page {
     Home(home::State),
-    Stats(Option<stats::State>),
+    Stats(stats::State),
     Settings(settings::State),
 }
 

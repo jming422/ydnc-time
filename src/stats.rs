@@ -1,4 +1,9 @@
-use crate::TimeLog;
+use std::{ffi::OsStr, fs, io};
+
+use chrono::NaiveDate;
+use tracing::warn;
+
+use crate::{get_save_file_dir, load_log_file, TimeLog};
 
 #[derive(Debug, Clone, Copy)]
 pub struct TimeStats {
@@ -50,7 +55,11 @@ impl TimeStatsBuilder {
             task_number: self.number,
             count: self.count,
             total: self.total,
-            mean: self.total / (self.count as i32),
+            mean: if self.count == 0 {
+                chrono::Duration::zero()
+            } else {
+                self.total / (self.count as i32)
+            },
         }
     }
 }
@@ -75,4 +84,63 @@ pub fn compute_stats(logs: impl IntoIterator<Item = TimeLog>) -> [TimeStats; 8] 
     }
 
     result.map(|tsb| tsb.build())
+}
+
+/// Returns the stats from all historical files available in the save directory.
+/// Includes TimeStats for each task as well as the minimum dated file located
+/// if available.
+pub fn load_history(
+    min_date: Option<NaiveDate>,
+    max_date: Option<NaiveDate>,
+) -> io::Result<([TimeStats; 8], Option<NaiveDate>)> {
+    if let Some(dir) = get_save_file_dir() {
+        let (dates, logs): (Vec<_>, Vec<_>) = fs::read_dir(dir)?
+            .filter_map(|res| {
+                let path = res.map(|e| e.path());
+
+                // If no path, no extension, or extension != .ron, return None
+                // to skip this file. Else unwrap the successfully read path.
+                if path.as_ref().map_or(true, |p| {
+                    p.extension().map_or(true, |ext| ext != OsStr::new("ron"))
+                }) {
+                    return None;
+                }
+                let path = path.unwrap();
+
+                let file_date = path
+                    .file_name()
+                    .expect("loadable files have names")
+                    .to_string_lossy()
+                    .trim_end_matches(".ron")
+                    .parse::<NaiveDate>();
+
+                if let Err(e) = file_date {
+                    warn!("Undated file found in save directory, skipping: {}", e);
+                    return None;
+                }
+                let file_date = file_date.unwrap();
+
+                // Skip files outside our date range
+                if min_date.map_or(false, |min| file_date < min)
+                    || max_date.map_or(false, |max| file_date > max)
+                {
+                    return None;
+                }
+
+                let r = load_log_file(&path).map(|loaded_log| (file_date, loaded_log));
+                if let Err(e) = r.as_ref() {
+                    warn!("Unable to load history from a file in the save dir: {}", e);
+                }
+                r.ok()
+            })
+            .unzip();
+
+        Ok((
+            compute_stats(logs.into_iter().flatten()),
+            dates.into_iter().min(),
+        ))
+    } else {
+        warn!("Unable to load history: cannot locate and/or open save file directory");
+        Ok(([TimeStats::default(); 8], None))
+    }
 }
