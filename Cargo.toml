@@ -25,5 +25,5 @@ tokio-stream = "0.1"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tui = "0.19"
+tui = { package = "ratatui", version = "0.20" }
 uuid = "1"
