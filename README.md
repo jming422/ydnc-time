@@ -10,15 +10,19 @@
 
 ---
 
-This is software to help you track how much time you spend on different types of activities. It is highly opinionated, entirely local, and terminal only.
+This is software to help you track how much time you spend on different types of activities. It is entirely local, terminal only, and very lightweight.
 
 ![screenshot](https://raw.githubusercontent.com/jming422/ydnc-time/main/screenshots/screenshot4.png)
 ![another screenshot](https://raw.githubusercontent.com/jming422/ydnc-time/main/screenshots/screenshot2.png)
 
 ## Main Features
 
+- Fast
+  - On my laptop during regular use, app startup time (loading a timelog from save and rendering the UI) does not exceed 40ms.
 - Cross-platform
+  - [Prebuilt binaries](https://github.com/jming422/ydnc-time/releases) available for macOS, Linux, and Windows
 - Works well even with very low terminal resolution
+  - Perfect for squishing into the corner of your screen so it stays present but out of the way
 - Autosaves time log & user settings to a plain-text format ([RON](https://github.com/ron-rs/ron))
   - Saves to the OS-appropriate config & data directories. See the [directories](https://crates.io/crates/directories) crate for details.
 - Controllable using the keyboard or using a [Timeular Tracker](https://timeular.com/tracker/)
@@ -49,7 +53,7 @@ Then these aren't the ~droids~ software you're looking for -- there are plenty o
 
 YDNC applications are less "anti-cloud" and more "do I _have_ to use the cloud?" For some people and workflows, the cloud is simply not necessary, and including it introduces application latency and other undesirable side effects. If you find you're not even using the cloud features like collaboration or cross-device syncing, then why not try removing the cloud from the equation? You'll probably be surprised at how performant software can be when it's running on your own computer!
 
-I suppose, if you really wanted, you could locate where YDNC stores its save files on disk and somehow sync that folder to the cloud storage of your choice. But that's not in scope for this project, so I'll leave it as an exercise for the reader.
+I suppose if you wanted, you could locate where YDNC stores its save files on disk and somehow sync that folder to the cloud storage of your choice. But that's not in scope for this project, so I'll leave it as an exercise for the reader.
 
 ## References
 
