@@ -86,9 +86,10 @@ pub fn compute_stats(logs: impl IntoIterator<Item = TimeLog>) -> [TimeStats; 8] 
     result.map(|tsb| tsb.build())
 }
 
-/// Returns the stats from all historical files available in the save directory.
+/// Returns the stats from historical files available in the save directory.
 /// Includes TimeStats for each task as well as the minimum dated file located
-/// if available.
+/// if available. Both min_date and max_date are optional and inclusive if
+/// provided.
 pub fn load_history(
     min_date: Option<NaiveDate>,
     max_date: Option<NaiveDate>,

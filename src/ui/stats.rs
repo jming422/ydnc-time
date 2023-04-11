@@ -27,6 +27,7 @@ const SPACED_DOT: &str = " • ";
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DateRangeOption {
     #[default]
+    Today,
     ThisWeek,
     LastWeek,
     Past7Days,
@@ -38,7 +39,8 @@ pub enum DateRangeOption {
     AllTime,
 }
 
-const DATE_PICKER_ORDER: [DateRangeOption; 9] = [
+const DATE_PICKER_ORDER: [DateRangeOption; 10] = [
+    DateRangeOption::Today,
     DateRangeOption::ThisWeek,
     DateRangeOption::LastWeek,
     DateRangeOption::Past7Days,
@@ -53,6 +55,7 @@ const DATE_PICKER_ORDER: [DateRangeOption; 9] = [
 impl Display for DateRangeOption {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            DateRangeOption::Today => write!(f, "Today"),
             DateRangeOption::ThisWeek => write!(f, "This week"),
             DateRangeOption::LastWeek => write!(f, "Last week"),
             DateRangeOption::Past7Days => write!(f, "Past 7 days"),
@@ -87,6 +90,7 @@ impl DateRangeOption {
             .num_days_from_sunday();
 
         match self {
+            DateRangeOption::Today => (Some(today), today),
             DateRangeOption::ThisWeek => (
                 today.checked_sub_days(Days::new(
                     (today.weekday().num_days_from_sunday() - week_start).into(),
@@ -154,7 +158,7 @@ pub struct State {
 
 impl State {
     pub fn load_default_date_range(prefs: &Preferences) -> io::Result<Self> {
-        Self::load_date_range(prefs, DateRangeOption::ThisWeek)
+        Self::load_date_range(prefs, DateRangeOption::Today)
     }
 
     pub fn load_date_range(prefs: &Preferences, date_range: DateRangeOption) -> io::Result<Self> {
