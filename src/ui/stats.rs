@@ -113,7 +113,7 @@ impl DateRangeOption {
                 )
             }
             DateRangeOption::Past7Days => (Some(today - Days::new(7)), today),
-            DateRangeOption::Past30Days => (Some(today - Days::new(7)), today),
+            DateRangeOption::Past30Days => (Some(today - Days::new(30)), today),
             DateRangeOption::Mtd => (today.with_day(1), today),
             DateRangeOption::Qtd => (
                 today
