@@ -3,11 +3,11 @@ use std::io;
 
 use chrono::{Datelike, Days, Local, NaiveDate, Weekday};
 use itertools::Itertools;
-use tui::{
+use ratatui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::{Line, Span},
     widgets::{canvas::Canvas, Block, Borders, Paragraph, Row, Table, Wrap},
     Frame,
 };
@@ -20,7 +20,7 @@ use crate::{
 
 use super::{message_widget, number_to_color, utils::bold, widgets::Donut, Page};
 
-// Inspired by tui::symbols::DOT but lol you can't concat strings at compile
+// Inspired by ratatui::symbols::DOT but lol you can't concat strings at compile
 // time in rust without downloading a 77kb crate and that isn't worth it
 const SPACED_DOT: &str = " • ";
 
@@ -238,7 +238,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .split(f.size());
 
     // Help widget
-    let help_message = Paragraph::new(Spans::from(vec![
+    let help_message = Paragraph::new(Line::from(vec![
         bold("q"),
         Span::raw("/"),
         bold("Esc"),
@@ -352,7 +352,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         });
 
         let date_picker = Paragraph::new(vec![
-            Spans::from(vec![
+            Line::from(vec![
                 Span::styled(
                     "Date Range:",
                     Style::default().add_modifier(Modifier::UNDERLINED),
@@ -363,7 +363,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
                     " All time".to_string()
                 }),
             ]),
-            Spans::from(
+            Line::from(
                 // TODO once intersperse drops on stable, use that and drop the
                 // itertools dep
                 Itertools::intersperse(date_options, Span::raw(SPACED_DOT)).collect::<Vec<Span>>(),

@@ -1,5 +1,5 @@
 // ydnc-time -- You Don't Need the Cloud to log your time!
-// Copyright 2022 Jonathan Ming
+// Copyright 2023 Jonathan Ming
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,12 @@
 use chrono::{DateTime, Days, Local, Weekday};
 use crossterm::event::{self, Event, KeyCode};
 use directories::ProjectDirs;
+use ratatui::{
+    backend::Backend,
+    text::{Line, Span},
+    widgets::{Cell, Row},
+    Terminal,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
@@ -24,12 +30,6 @@ use std::{
     time::Duration,
 };
 use tracing::info;
-use tui::{
-    backend::Backend,
-    text::{Span, Spans},
-    widgets::{Cell, Row},
-    Terminal,
-};
 use utils::{adjust_datetime_digit, datetime_with_zeroed_time};
 
 pub mod bluetooth;
@@ -99,7 +99,7 @@ impl TimeLog {
 
         Row::new(vec![
             Cell::from(format!("[{}]", self.resolve_label(labels))),
-            Cell::from(Spans::from(vec![
+            Cell::from(Line::from(vec![
                 Span::raw("from "),
                 maybe_bold(start_hm),
                 maybe_dim(start_s),

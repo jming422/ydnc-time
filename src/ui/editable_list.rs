@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 
-use tracing::info;
-use tui::{
+use ratatui::{
     backend::Backend,
     layout::{Constraint, Rect},
     style::{Modifier, Style},
@@ -9,6 +8,7 @@ use tui::{
     widgets::{Block, Borders, List, ListItem, ListState, Row, Table, TableState},
     Frame,
 };
+use tracing::info;
 
 // Sure woulda been nice if tui had listed this API as a shared trait between
 // ListState and TableState, huh? Since they didn't, we need to ourselves:

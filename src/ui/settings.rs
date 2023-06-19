@@ -1,8 +1,8 @@
-use tui::{
+use ratatui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
-    text::{Span, Spans, Text},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, ListState, Paragraph},
     Frame,
 };
@@ -37,7 +37,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         )
         .split(f.size());
 
-    let help_message = Paragraph::new(Spans::from(if state.editing {
+    let help_message = Paragraph::new(Line::from(if state.editing {
         vec![
             bold("Esc"),
             Span::raw(": cancel | "),
@@ -60,7 +60,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     }));
     f.render_widget(help_message, chunks[0]);
 
-    let active_num = Paragraph::new(Spans::from(vec![
+    let active_num = Paragraph::new(Line::from(vec![
         Span::raw("Current entry #: "),
         bold(open_entry.map_or(String::from("None"), |n| n.to_string())),
     ]))
@@ -73,7 +73,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 }
 
 fn render_item<'a>(i: usize, item: &'a String, input: &'a String, editing: bool) -> Text<'a> {
-    Spans::from(vec![
+    Line::from(vec![
         bold(format!("[{}]: ", i + 1)),
         if editing {
             Span::styled(input, Style::default().add_modifier(Modifier::UNDERLINED))

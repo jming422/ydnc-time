@@ -1,5 +1,5 @@
 // ydnc-time -- You Don't Need the Cloud to log your time!
-// Copyright 2022 Jonathan Ming
+// Copyright 2023 Jonathan Ming
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{
     error::Error,
     io,
@@ -24,7 +25,6 @@ use std::{
 };
 use tracing::info;
 use tracing_subscriber::{filter::LevelFilter, prelude::*, EnvFilter};
-use tui::{backend::CrosstermBackend, Terminal};
 
 use ydnc_time::{bluetooth::BluetoothTask, App};
 

@@ -1,8 +1,8 @@
-use tracing::warn;
-use tui::{
+use ratatui::{
     style::Color,
     widgets::canvas::{Context, Line},
 };
+use tracing::warn;
 
 pub struct Donut {
     /// The bigger this divisor, the smaller the donut hole.

@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use tui::{
+use ratatui::{
     layout::Constraint,
     widgets::{Row, Table},
 };

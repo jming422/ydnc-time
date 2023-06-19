@@ -1,6 +1,6 @@
 [package]
 name = "ydnc-time"
-version = "0.5.1"
+version = "0.5.2"
 authors = ["Jonathan Ming"]
 edition = "2021"
 description = "You don't need the cloud to log your time"
@@ -26,5 +26,5 @@ tokio-stream = "0.1"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tui = { package = "ratatui", version = "0.20" }
+ratatui = { version = "0.21", features = ["all-widgets"] }
 uuid = "1"

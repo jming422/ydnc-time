@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use tui::{
+use ratatui::{
     style::{Modifier, Style},
     text::Span,
 };

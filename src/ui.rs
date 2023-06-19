@@ -1,4 +1,4 @@
-use tui::{
+use ratatui::{
     backend::Backend,
     style::Color,
     widgets::{Paragraph, Wrap},

@@ -1,9 +1,9 @@
 use chrono::{Local, NaiveTime, Timelike};
-use tui::{
+use ratatui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style},
-    text::{Span, Spans},
+    text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
     Frame,
 };
@@ -235,7 +235,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             ref delete_pending,
         } = state_type
         {
-            let help_message = Paragraph::new(Spans::from(if *delete_pending {
+            let help_message = Paragraph::new(Line::from(if *delete_pending {
                 vec![
                     bold("Are you sure?"),
                     Span::raw(" Press "),
@@ -317,7 +317,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
                     }
 
                     Row::new(vec![
-                        Cell::from(Spans::from(vec![
+                        Cell::from(Line::from(vec![
                             Span::raw("["),
                             utils::blinky_if_index_matches(
                                 *cursor_pos,
@@ -326,14 +326,14 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
                             ),
                             Span::raw("]"),
                         ])),
-                        Cell::from(Spans::from(spans)),
+                        Cell::from(Line::from(spans)),
                     ])
                 } else {
                     item.to_row_unstyled(labels)
                 }
             });
         } else {
-            let help_message = Paragraph::new(Spans::from(vec![
+            let help_message = Paragraph::new(Line::from(vec![
                 bold("q"),
                 Span::raw(": quit | "),
                 bold("1-8 keys"),
